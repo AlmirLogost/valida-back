@@ -1,0 +1,11 @@
+const express = require('express')
+const router = express.Router()
+const templateController = require('../controllers/templateController')
+const auth = require('../middlewares/auth')
+router.get('/templates', auth, templateController.listar)
+router.get('/templates/:id', auth, templateController.obter)
+router.post('/templates', auth, templateController.criar)
+router.put('/templates/:id', auth, templateController.atualizar)
+router.delete('/templates/:id', auth, templateController.deletar)
+router.post('/templates/aplicar', auth, templateController.aplicar)
+module.exports = router
