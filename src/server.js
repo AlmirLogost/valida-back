@@ -29,5 +29,5 @@ app.use('/api', templateRoutes)
 
 app.get('/', (req, res) => res.json({ message: 'VALIDA API' }))
 
-const PORT = process.env.PORT || 3000
-app.listen(PORT, () => console.log(`🚀 VALIDA na porta ${PORT}`))
+const PORT = process.env.PORT || 3001
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 VALIDA na porta ${PORT}`))
