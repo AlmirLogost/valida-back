@@ -6,12 +6,14 @@ const { query } = require('../config/database');
 
 exports.login = async (req, res) => {
   try {
+    console.log('📍 Entrou no controller de login');
     const { email, senha } = req.body;
     console.log('🔍 Tentativa de login:', email); 
     
     // Busca o usuário usando a função query importada do seu database.js
+    console.log('🔄 Executando query...');
     const users = await query('SELECT * FROM usuarios WHERE email = ?', [email]);
-    console.log('📊 Usuários encontrados:', users.length); 
+    console.log('📊 Usuários encontrados:', users ? users.length : 'null'); 
     
     if (users.length === 0) {
       return res.status(401).json({ erro: 'Usuário não encontrado' });
@@ -31,7 +33,7 @@ exports.login = async (req, res) => {
     const token = jwt.sign(
       { id: user.id, perfil: user.perfil }, 
       process.env.JWT_SECRET || 'sua_chave_secreta_aqui', 
-      { expiresIn: '30d' }
+      { expiresIn: '90d' }
     );
     console.log('✅ Token gerado:', token.substring(0, 20) + '...'); 
     

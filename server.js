@@ -2,6 +2,11 @@ require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 
+// Inicializar banco de dados
+console.log('🔄 Carregando banco de dados...')
+const { db } = require('./src/config/database')
+console.log('✅ Banco de dados carregado')
+
 const authRoutes = require('./src/routes/authRoutes')
 const lojaRoutes = require('./src/routes/lojaRoutes')
 const usuarioRoutes = require('./src/routes/usuarioRoutes')
@@ -30,7 +35,7 @@ app.use('/api', authPinRoutes)
 
 // Servir frontend
 app.use(express.static(require("path").join(__dirname, "../frontend")))
-const PORT = process.env.PORT || 3000
+const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`)
 })
