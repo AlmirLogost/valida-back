@@ -4,29 +4,44 @@ exports.iniciar = async (req, res) => {
   try {
     const { checklist_id } = req.body
     
-    const itens = await query('SELECT COUNT(*) as total FROM checklist_itens WHERE checklist_id = ?', [checklist_id])
-    const totalItens = itens[0].total
+    const checklistItens = await query('SELECT * FROM checklist_itens WHERE checklist_id = ? ORDER BY ordem', [checklist_id])
+    const totalItens = checklistItens.length
     
     const checklist = await query('SELECT * FROM checklists WHERE id = ?', [checklist_id])
-    
+    if (!checklist[0]) return res.status(404).json({ erro: 'Checklist não encontrado' })
+
     const result = await run(
       'INSERT INTO execucoes (checklist_id, usuario_id, loja_id, total_itens, status) VALUES (?, ?, ?, ?, ?)',
       [checklist_id, req.userId, checklist[0].loja_id, totalItens, 'em_andamento']
     )
-    
-    const checklistItens = await query('SELECT * FROM checklist_itens WHERE checklist_id = ? ORDER BY ordem', [checklist_id])
-    
-    for (const item of checklistItens) {
+    const execId = result.lastID
+
+    let primeiroItemId = null
+
+    if (checklistItens.length > 0) {
+      // Checklist com sub-itens: cria entrada para cada item
+      for (const item of checklistItens) {
+        await run(
+          'INSERT INTO execucoes_itens (execucao_id, checklist_item_id, tipo_resposta) VALUES (?, ?, ?)',
+          [execId, item.id, item.tipo_campo]
+        )
+      }
+      primeiroItemId = checklistItens[0].id
+    } else {
+      // Checklist simples (sem sub-itens): cria UMA entrada virtual usando checklist_id=0
+      // para que o responderItem consiga salvar a resposta
       await run(
         'INSERT INTO execucoes_itens (execucao_id, checklist_item_id, tipo_resposta) VALUES (?, ?, ?)',
-        [result.lastID, item.id, item.tipo_campo]
+        [execId, 0, checklist[0].tipo_campo || 'boolean']
       )
+      primeiroItemId = 0
     }
     
     res.json({ 
-      id: result.lastID, 
+      id: execId, 
       message: 'Execução iniciada!',
-      total_itens: totalItens 
+      total_itens: totalItens,
+      item_id: primeiroItemId
     })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -36,8 +51,9 @@ exports.iniciar = async (req, res) => {
 exports.responderItem = async (req, res) => {
   try {
     const { execucao_id, item_id, concluido, valor_resposta, observacao, evidencia_base64 } = req.body
-    
-    await run(
+
+    // Tenta atualizar pelo checklist_item_id exato
+    const upd = await run(
       `UPDATE execucoes_itens SET 
        concluido = ?, valor_resposta = ?, observacao = ?, 
        evidencia_url = ?, respondido_em = CURRENT_TIMESTAMP
@@ -45,6 +61,18 @@ exports.responderItem = async (req, res) => {
       [concluido ? 1 : 0, valor_resposta || null, observacao || null,
        evidencia_base64 || null, execucao_id, item_id]
     )
+
+    // Se 0 linhas foram afetadas, tenta pelo item virtual (item_id=0) criado para checklists simples
+    if (upd.changes === 0) {
+      await run(
+        `UPDATE execucoes_itens SET 
+         concluido = ?, valor_resposta = ?, observacao = ?, 
+         evidencia_url = ?, respondido_em = CURRENT_TIMESTAMP
+         WHERE execucao_id = ? AND checklist_item_id = 0`,
+        [concluido ? 1 : 0, valor_resposta || null, observacao || null,
+         evidencia_base64 || null, execucao_id]
+      )
+    }
     
     const concluidos = await query(
       'SELECT COUNT(*) as total FROM execucoes_itens WHERE execucao_id = ? AND concluido = 1',
@@ -73,7 +101,12 @@ exports.concluir = async (req, res) => {
     const { id } = req.params
     const { score } = req.body
     
-    // Verificar se todos os itens obrigatórios com evidência foram respondidos
+    // Buscar execução para pegar o checklist
+    const execucaoRows = await query('SELECT e.*, c.evidencia_obrigatoria as cl_evid FROM execucoes e LEFT JOIN checklists c ON e.checklist_id = c.id WHERE e.id = ?', [id])
+    if (!execucaoRows[0]) return res.status(404).json({ erro: 'Execução não encontrada' })
+    const execucao = execucaoRows[0]
+
+    // Verificar itens sub-itens com evidência pendente (checklists complexos)
     const pendentes = await query(`
       SELECT ei.*, ci.titulo, ci.evidencia_obrigatoria
       FROM execucoes_itens ei
@@ -88,16 +121,26 @@ exports.concluir = async (req, res) => {
         itens_pendentes: pendentes.map(p => p.titulo)
       })
     }
+
+    // Verificar evidência do checklist simples (item virtual, checklist_item_id = 0)
+    if (execucao.cl_evid) {
+      const itemVirtual = await query(
+        'SELECT * FROM execucoes_itens WHERE execucao_id = ? AND checklist_item_id = 0',
+        [id]
+      )
+      if (itemVirtual[0] && (!itemVirtual[0].evidencia_url || itemVirtual[0].evidencia_url === '')) {
+        return res.status(400).json({ erro: 'Evidência (foto) obrigatória não enviada' })
+      }
+    }
     
     await run(
       'UPDATE execucoes SET status = ?, concluido_em = CURRENT_TIMESTAMP, score = ? WHERE id = ?',
       ['concluido', score, id]
     )
     
-    const execucao = await query('SELECT usuario_id FROM execucoes WHERE id = ?', [id])
     await run(
       'UPDATE usuarios SET score = score + ? WHERE id = ?',
-      [score, execucao[0].usuario_id]
+      [score, execucao.usuario_id]
     )
     
     res.json({ message: 'Execução concluída!' })
