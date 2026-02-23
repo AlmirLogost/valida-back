@@ -12,6 +12,7 @@ const checklistItemRoutes    = require('./routes/checklistItemRoutes')
 const execucaoRoutes         = require('./routes/execucaoRoutes')
 const usuarioChecklistRoutes = require('./routes/usuarioChecklistRoutes')
 const templateRoutes         = require('./routes/templateRoutes')
+const checklistDataRoutes    = require('./routes/checklistDataRoutes')
 
 const app = express()
 
@@ -28,6 +29,7 @@ app.use('/api', checklistItemRoutes)
 app.use('/api', execucaoRoutes)
 app.use('/api', usuarioChecklistRoutes)
 app.use('/api', templateRoutes)
+app.use('/api', checklistDataRoutes)
 
 app.get('/', (req, res) => res.json({ message: 'VALIDA API' }))
 
