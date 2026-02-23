@@ -30,14 +30,14 @@ exports.criar = async (req, res) => {
        tipo_campo, evidencia_obrigatoria, tipo_evidencia, critico,
        subtipo_numerico, peso, rotulo_positivo, rotulo_negativo,
        data_inicio, data_termino, repeticao_intervalo, tolerancia_min) 
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [b.titulo, b.descricao, b.categoria, b.loja_id||null, req.userId, 
        b.horario_inicio, b.horario_fim, b.recorrencia,
        b.data_mensal||null, b.dias_semana||null, b.momento||'outros',
        b.tipo_campo||'boolean', b.evidencia_obrigatoria||0, b.tipo_evidencia||'imagem',
        b.critico||0, b.subtipo_numerico||'inteiro', b.peso||1,
        b.rotulo_positivo||'Feito', b.rotulo_negativo||'Nao Feito',
-       b.data_inicio||null, b.data_termino||null, b.repeticao_intervalo||1, b.tolerancia_min||30, b.tolerancia_min||30]
+       b.data_inicio||null, b.data_termino||null, b.repeticao_intervalo||1, b.tolerancia_min||30]
     )
     res.json({ id: result.lastID, message: 'Checklist criado!' })
   } catch (erro) {
