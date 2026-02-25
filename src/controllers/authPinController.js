@@ -10,11 +10,22 @@ exports.loginPin = async (req, res) => {
       return res.status(400).json({ erro: 'Informe nome e PIN' })
     }
     
+    // Buscar perfis que usam PIN como método de login
+    const perfisPin = await query(
+      `SELECT nome FROM perfis WHERE metodo_login = 'pin' AND ativo = 1`
+    )
+    const slugsPin = perfisPin.map(p => p.nome)
+    
+    // Fallback: se tabela perfis vazia, usar padrão
+    const perfilFilter = slugsPin.length > 0
+      ? `AND perfil IN (${slugsPin.map(() => '?').join(',')})`
+      : `AND perfil IN ('funcionario', 'gerente')`
+    
     // Busca por nome (case insensitive)
     const users = await query(
       `SELECT * FROM usuarios 
-       WHERE LOWER(nome) = LOWER(?) AND ativo = 1 AND perfil IN ('funcionario', 'gerente')`,
-      [nome.trim()]
+       WHERE LOWER(nome) = LOWER(?) AND ativo = 1 ${perfilFilter}`,
+      [nome.trim(), ...(slugsPin.length > 0 ? slugsPin : [])]
     )
     
     if (users.length === 0) {
@@ -44,6 +55,22 @@ exports.loginPin = async (req, res) => {
       { expiresIn: '30d' }
     )
     
+    // Buscar permissoes do perfil
+    const perfilData = await query(
+      'SELECT * FROM perfis WHERE nome = ? AND ativo = 1 LIMIT 1',
+      [user.perfil]
+    )
+    const permissoes = perfilData.length > 0 ? {
+      perm_dashboard: !!perfilData[0].perm_dashboard,
+      perm_criar_tarefas: !!perfilData[0].perm_criar_tarefas,
+      perm_executar_tarefas: !!perfilData[0].perm_executar_tarefas,
+      perm_conferir: !!perfilData[0].perm_conferir,
+      perm_gerenciar_equipe: !!perfilData[0].perm_gerenciar_equipe,
+      perm_gerenciar_lojas: !!perfilData[0].perm_gerenciar_lojas,
+      perm_relatorios: !!perfilData[0].perm_relatorios,
+      perm_configuracoes: !!perfilData[0].perm_configuracoes
+    } : null
+
     res.json({
       token,
       user: {
@@ -54,7 +81,9 @@ exports.loginPin = async (req, res) => {
         loja_id: user.loja_id,
         tipo_comissao: user.tipo_comissao,
         valor_tarefa_feita: user.valor_tarefa_feita,
-        valor_mensal_fixo: user.valor_mensal_fixo
+        valor_mensal_fixo: user.valor_mensal_fixo,
+        rotulo_perfil: perfilData.length > 0 ? perfilData[0].rotulo : user.perfil,
+        permissoes
       }
     })
   } catch (erro) {

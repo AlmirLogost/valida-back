@@ -33,7 +33,15 @@ app.use('/api', templateRoutes)
 app.use('/api', checklistDataRoutes)
 app.use('/api', authPinRoutes)
 
-// Servir frontend
+// Servir frontend — sem cache em HTML para sempre servir versão atualizada
+app.use((req, res, next) => {
+  if (req.path.endsWith('.html')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+    res.setHeader('Pragma', 'no-cache')
+    res.setHeader('Expires', '0')
+  }
+  next()
+})
 app.use(express.static(require("path").join(__dirname, "../frontend")))
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {

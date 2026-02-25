@@ -38,6 +38,28 @@ const createTables = async () => {
     criado_em DATETIME DEFAULT CURRENT_TIMESTAMP
   )`)
 
+  await run(`CREATE TABLE IF NOT EXISTS perfis (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    rotulo TEXT NOT NULL,
+    loja_id INTEGER,
+    metodo_login TEXT DEFAULT 'pin',
+    pode_acessar_painel BOOLEAN DEFAULT 0,
+    cor TEXT DEFAULT '#3483fa',
+    sistema BOOLEAN DEFAULT 0,
+    ordem INTEGER DEFAULT 0,
+    ativo BOOLEAN DEFAULT 1,
+    perm_dashboard BOOLEAN DEFAULT 0,
+    perm_criar_tarefas BOOLEAN DEFAULT 0,
+    perm_executar_tarefas BOOLEAN DEFAULT 0,
+    perm_conferir BOOLEAN DEFAULT 0,
+    perm_gerenciar_equipe BOOLEAN DEFAULT 0,
+    perm_gerenciar_lojas BOOLEAN DEFAULT 0,
+    perm_relatorios BOOLEAN DEFAULT 0,
+    perm_configuracoes BOOLEAN DEFAULT 0,
+    criado_em DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`)
+
   await run(`CREATE TABLE IF NOT EXISTS usuarios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT NOT NULL,
@@ -113,4 +135,21 @@ const createUsuarioChecklistsTable = async () => {
   console.log('✅ Tabela usuario_checklists criada!')
 }
 
-module.exports = { db, query, run, createTables, createUsuarioChecklistsTable }
+// Migration: add permission columns to existing perfis table
+const migratePerfisPermissions = async () => {
+  const permCols = [
+    'perm_dashboard', 'perm_criar_tarefas', 'perm_executar_tarefas',
+    'perm_conferir', 'perm_gerenciar_equipe', 'perm_gerenciar_lojas',
+    'perm_relatorios', 'perm_configuracoes'
+  ]
+  for (const col of permCols) {
+    try {
+      await run(`ALTER TABLE perfis ADD COLUMN ${col} BOOLEAN DEFAULT 0`)
+      console.log(`  + coluna ${col} adicionada`)
+    } catch (e) {
+      // Column already exists, ignore
+    }
+  }
+}
+
+module.exports = { db, query, run, createTables, createUsuarioChecklistsTable, migratePerfisPermissions }

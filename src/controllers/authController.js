@@ -37,6 +37,22 @@ exports.login = async (req, res) => {
     );
     console.log('✅ Token gerado:', token.substring(0, 20) + '...'); 
     
+    // Buscar permissoes do perfil
+    const perfilData = await query(
+      'SELECT * FROM perfis WHERE nome = ? AND ativo = 1 LIMIT 1',
+      [user.perfil]
+    )
+    const permissoes = perfilData.length > 0 ? {
+      perm_dashboard: !!perfilData[0].perm_dashboard,
+      perm_criar_tarefas: !!perfilData[0].perm_criar_tarefas,
+      perm_executar_tarefas: !!perfilData[0].perm_executar_tarefas,
+      perm_conferir: !!perfilData[0].perm_conferir,
+      perm_gerenciar_equipe: !!perfilData[0].perm_gerenciar_equipe,
+      perm_gerenciar_lojas: !!perfilData[0].perm_gerenciar_lojas,
+      perm_relatorios: !!perfilData[0].perm_relatorios,
+      perm_configuracoes: !!perfilData[0].perm_configuracoes
+    } : null
+
     res.json({ 
       token, 
       user: { 
@@ -47,7 +63,9 @@ exports.login = async (req, res) => {
         loja_id: user.loja_id,
         tipo_comissao: user.tipo_comissao,
         valor_tarefa_feita: user.valor_tarefa_feita,
-        valor_mensal_fixo: user.valor_mensal_fixo
+        valor_mensal_fixo: user.valor_mensal_fixo,
+        rotulo_perfil: perfilData.length > 0 ? perfilData[0].rotulo : user.perfil,
+        permissoes
       } 
     });
 
