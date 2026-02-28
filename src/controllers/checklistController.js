@@ -90,12 +90,48 @@ exports.toggleStatus = async (req, res) => {
 exports.togglePausado = async (req, res) => {
   try {
     const { id } = req.params
-    // Garante que a coluna existe (migration segura)
+    const { tipo } = req.body || {}
+
+    // Migrations seguras: adiciona colunas se não existirem
     await run(`ALTER TABLE checklists ADD COLUMN pausado BOOLEAN DEFAULT 0`).catch(() => {})
-    const checklist = await query('SELECT pausado FROM checklists WHERE id = ?', [id])
-    const novoPausado = checklist[0]?.pausado ? 0 : 1
-    await run('UPDATE checklists SET pausado = ? WHERE id = ?', [novoPausado, id])
-    res.json({ message: novoPausado ? 'Tarefa pausada!' : 'Tarefa retomada!', pausado: novoPausado })
+    await run(`ALTER TABLE checklists ADD COLUMN pausado_tipo TEXT`).catch(() => {})
+    await run(`ALTER TABLE checklists ADD COLUMN pausado_ate TEXT`).catch(() => {})
+
+    const checklist = await query('SELECT pausado, pausado_tipo FROM checklists WHERE id = ?', [id])
+    if (!checklist[0]) return res.status(404).json({ erro: 'Tarefa não encontrada' })
+
+    const jaPausado = checklist[0].pausado
+
+    if (jaPausado) {
+      // Retomar: limpa os dados de pausa
+      await run(
+        'UPDATE checklists SET pausado = 0, pausado_tipo = NULL, pausado_ate = NULL WHERE id = ?',
+        [id]
+      )
+      return res.json({
+        pausado: 0,
+        pausado_tipo: null,
+        pausado_ate: null,
+        message: 'Tarefa retomada!'
+      })
+    }
+
+    // Pausar: guarda tipo e data (somente hoje = data de hoje)
+    const tipoFinal = tipo || 'indeterminado'
+    const hoje = new Date().toISOString().slice(0, 10)
+    const pausadoAte = tipoFinal === 'hoje' ? hoje : null
+
+    await run(
+      'UPDATE checklists SET pausado = 1, pausado_tipo = ?, pausado_ate = ? WHERE id = ?',
+      [tipoFinal, pausadoAte, id]
+    )
+
+    return res.json({
+      pausado: 1,
+      pausado_tipo: tipoFinal,
+      pausado_ate: pausadoAte,
+      message: tipoFinal === 'hoje' ? 'Tarefa pausada para hoje!' : 'Tarefa pausada por tempo indeterminado!'
+    })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
   }
