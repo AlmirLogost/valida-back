@@ -8,5 +8,6 @@ router.post('/checklists', auth, checklistController.criar)
 router.put('/checklists/:id', auth, checklistController.atualizar)
 router.delete('/checklists/:id', auth, checklistController.deletar)
 router.patch('/checklists/:id/toggle', auth, checklistController.toggleStatus)
+router.patch('/checklists/:id/pausar', auth, checklistController.togglePausado)
 
 module.exports = router

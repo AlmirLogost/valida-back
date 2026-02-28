@@ -87,3 +87,16 @@ exports.toggleStatus = async (req, res) => {
     res.status(500).json({ erro: erro.message })
   }
 }
+exports.togglePausado = async (req, res) => {
+  try {
+    const { id } = req.params
+    // Garante que a coluna existe (migration segura)
+    await run(`ALTER TABLE checklists ADD COLUMN pausado BOOLEAN DEFAULT 0`).catch(() => {})
+    const checklist = await query('SELECT pausado FROM checklists WHERE id = ?', [id])
+    const novoPausado = checklist[0]?.pausado ? 0 : 1
+    await run('UPDATE checklists SET pausado = ? WHERE id = ?', [novoPausado, id])
+    res.json({ message: novoPausado ? 'Tarefa pausada!' : 'Tarefa retomada!', pausado: novoPausado })
+  } catch (erro) {
+    res.status(500).json({ erro: erro.message })
+  }
+}
