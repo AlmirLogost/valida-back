@@ -90,7 +90,7 @@ exports.toggleStatus = async (req, res) => {
 exports.togglePausado = async (req, res) => {
   try {
     const { id } = req.params
-    const { tipo } = req.body || {}
+    const { tipo, ate } = req.body || {}
 
     // Migrations seguras: adiciona colunas se não existirem
     await run(`ALTER TABLE checklists ADD COLUMN pausado BOOLEAN DEFAULT 0`).catch(() => {})
@@ -116,10 +116,9 @@ exports.togglePausado = async (req, res) => {
       })
     }
 
-    // Pausar: guarda tipo e data (somente hoje = data de hoje)
+    // Pausar: tipo e ate vêm prontos do frontend
     const tipoFinal = tipo || 'indeterminado'
-    const hoje = new Date().toISOString().slice(0, 10)
-    const pausadoAte = tipoFinal === 'hoje' ? hoje : null
+    const pausadoAte = ate || null
 
     await run(
       'UPDATE checklists SET pausado = 1, pausado_tipo = ?, pausado_ate = ? WHERE id = ?',
@@ -130,7 +129,7 @@ exports.togglePausado = async (req, res) => {
       pausado: 1,
       pausado_tipo: tipoFinal,
       pausado_ate: pausadoAte,
-      message: tipoFinal === 'hoje' ? 'Tarefa pausada para hoje!' : 'Tarefa pausada por tempo indeterminado!'
+      message: 'Tarefa pausada!'
     })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
