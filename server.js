@@ -42,7 +42,10 @@ app.use((req, res, next) => {
   }
   next()
 })
-app.use(express.static(require("path").join(__dirname, "../frontend")))
+app.use(express.static(require("path").join(__dirname, "../front/dist")))
+app.get('/{*splat}', (req, res) => {
+  res.sendFile(require("path").join(__dirname, "../front/dist/index.html"))
+})
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`)

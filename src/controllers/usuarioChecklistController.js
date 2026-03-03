@@ -49,13 +49,37 @@ exports.listarDisponiveis = async (req, res) => {
 exports.vincular = async (req, res) => {
   try {
     const { usuario_id, checklist_id } = req.body
-    
+
+    // UPSERT: insere ou reativa se já existia (ativo=0)
     await run(
-      'INSERT OR IGNORE INTO usuario_checklists (usuario_id, checklist_id) VALUES (?, ?)',
+      `INSERT INTO usuario_checklists (usuario_id, checklist_id, ativo)
+       VALUES (?, ?, 1)
+       ON CONFLICT(usuario_id, checklist_id) DO UPDATE SET ativo = 1`,
       [usuario_id, checklist_id]
     )
-    
+
     res.json({ message: 'Checklist vinculado!' })
+  } catch (erro) {
+    res.status(500).json({ erro: erro.message })
+  }
+}
+
+exports.mover = async (req, res) => {
+  try {
+    const { from_usuario_id, to_usuario_id, checklist_id } = req.body
+    // 1. Reativa/cria o vínculo no destino
+    await run(
+      `INSERT INTO usuario_checklists (usuario_id, checklist_id, ativo)
+       VALUES (?, ?, 1)
+       ON CONFLICT(usuario_id, checklist_id) DO UPDATE SET ativo = 1`,
+      [to_usuario_id, checklist_id]
+    )
+    // 2. Desativa o vínculo da origem (por usuario_id+checklist_id, sem depender do id)
+    await run(
+      `UPDATE usuario_checklists SET ativo = 0 WHERE usuario_id = ? AND checklist_id = ?`,
+      [from_usuario_id, checklist_id]
+    )
+    res.json({ message: 'Tarefa movida!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
   }
@@ -83,6 +107,33 @@ exports.listarTodos = async (req, res) => {
       WHERE uc.ativo = 1
     `)
     res.json(vinculos)
+  } catch (erro) {
+    res.status(500).json({ erro: erro.message })
+  }
+}
+
+// Visão fiscal: todos os usuários da loja com seus checklists
+exports.listarChecklistsLoja = async (req, res) => {
+  try {
+    const { loja_id } = req.params
+
+    const usuarios = await query(
+      'SELECT id, nome, perfil FROM usuarios WHERE loja_id = ? AND ativo = 1 ORDER BY nome',
+      [loja_id]
+    )
+
+    const result = []
+    for (const u of usuarios) {
+      const checklists = await query(`
+        SELECT c.*, uc.id as vinculo_id
+        FROM checklists c
+        INNER JOIN usuario_checklists uc ON c.id = uc.checklist_id
+        WHERE uc.usuario_id = ? AND uc.ativo = 1 AND c.ativo = 1
+      `, [u.id])
+      result.push({ usuario: u, checklists })
+    }
+
+    res.json(result)
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
   }

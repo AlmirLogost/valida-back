@@ -188,8 +188,12 @@ exports.listar = async (req, res) => {
     const { loja_id, status, data_inicio, data_fim } = req.query
     
     let sql = `
-      SELECT e.*, c.titulo as checklist_titulo, c.categoria, c.momento,
-             u.nome as usuario_nome, l.nome as loja_nome
+      SELECT e.*,
+             c.titulo as checklist_titulo, c.categoria, c.momento,
+             u.nome as usuario_nome, l.nome as loja_nome,
+             (SELECT ei.evidencia_url FROM execucoes_itens ei
+              WHERE ei.execucao_id = e.id AND ei.evidencia_url IS NOT NULL AND ei.evidencia_url != ''
+              LIMIT 1) as evidencia_url
       FROM execucoes e
       LEFT JOIN checklists c ON e.checklist_id = c.id
       LEFT JOIN usuarios u ON e.usuario_id = u.id
@@ -204,7 +208,7 @@ exports.listar = async (req, res) => {
     if (data_inicio) { sql += ' AND DATE(e.iniciado_em) >= ?'; params.push(data_inicio) }
     if (data_fim) { sql += ' AND DATE(e.iniciado_em) <= ?'; params.push(data_fim) }
     
-    sql += ' ORDER BY e.iniciado_em DESC LIMIT 100'
+    sql += ' ORDER BY e.iniciado_em DESC LIMIT 200'
     
     const execucoes = await query(sql, params)
     res.json(execucoes)

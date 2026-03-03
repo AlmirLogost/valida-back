@@ -60,7 +60,7 @@ exports.atualizar = async (req, res) => {
        b.tipo_campo||'boolean', b.evidencia_obrigatoria||0, b.tipo_evidencia||'imagem',
        b.critico||0, b.subtipo_numerico||'inteiro', b.peso||1,
        b.rotulo_positivo||'Feito', b.rotulo_negativo||'Nao Feito',
-       b.data_inicio||null, b.data_termino||null, b.repeticao_intervalo||1, id]
+       b.data_inicio||null, b.data_termino||null, b.repeticao_intervalo||1, b.tolerancia_min||30, id]
     )
     res.json({ id: parseInt(id), message: 'Checklist atualizado!' })
   } catch (erro) {
