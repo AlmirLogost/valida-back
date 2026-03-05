@@ -4,7 +4,7 @@ const { query, run } = require('../config/database')
 exports.listar = async (req, res) => {
   try {
     const { loja_id } = req.query
-    let sql = 'SELECT id, nome, email, perfil, loja_id, ativo, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, score FROM usuarios WHERE ativo = 1'
+    let sql = 'SELECT id, nome, email, perfil, loja_id, ativo, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim, score FROM usuarios WHERE ativo = 1'
     const params = []
     if (loja_id) { sql += ' AND loja_id = ?'; params.push(loja_id) }
     sql += ' ORDER BY nome'
@@ -17,7 +17,7 @@ exports.listar = async (req, res) => {
 
 exports.criar = async (req, res) => {
   try {
-    const { nome, email, senha, perfil, loja_id, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal } = req.body
+    const { nome, email, senha, perfil, loja_id, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim } = req.body
 
     // Buscar configuração do perfil para determinar método de login
     const perfilConfig = await query('SELECT * FROM perfis WHERE nome = ? AND ativo = 1', [perfil])
@@ -55,9 +55,9 @@ exports.criar = async (req, res) => {
     const senhaHash = await bcrypt.hash(senha || pin, 10)
 
     const result = await run(
-      `INSERT INTO usuarios (nome, email, senha, perfil, loja_id, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal) 
+      `INSERT INTO usuarios (nome, email, senha, perfil, loja_id, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [nome, emailFinal, senhaHash, perfil, loja_id || null, pin || null, tipo_comissao || null, valor_tarefa_feita || 0, valor_desconto || 0, valor_mensal_fixo || 0, desconto_mensal || 0]
+      [nome, emailFinal, senhaHash, perfil, loja_id || null, pin || null, tipo_comissao || null, valor_tarefa_feita || 0, valor_desconto || 0, valor_mensal_fixo || 0, desconto_mensal || 0, periodo_comissao || 'mensal', periodo_inicio || null, periodo_fim || null]
     )
     res.json({ id: result.lastID, message: 'Usuário criado!' })
   } catch (erro) {
@@ -68,7 +68,7 @@ exports.criar = async (req, res) => {
 exports.atualizar = async (req, res) => {
   try {
     const { id } = req.params
-    const { nome, email, perfil, loja_id, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal } = req.body
+    const { nome, email, perfil, loja_id, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim } = req.body
 
     if (pin && !/^\d{4}$/.test(pin)) {
       return res.status(400).json({ erro: 'PIN deve ter 4 dígitos numéricos' })
@@ -103,9 +103,9 @@ exports.atualizar = async (req, res) => {
 
     await run(
       `UPDATE usuarios SET nome = ?, email = ?, perfil = ?, loja_id = ?, pin = ?, 
-       tipo_comissao = ?, valor_tarefa_feita = ?, valor_desconto = ?, valor_mensal_fixo = ?, desconto_mensal = ? 
+       tipo_comissao = ?, valor_tarefa_feita = ?, valor_desconto = ?, valor_mensal_fixo = ?, desconto_mensal = ?, periodo_comissao = ?, periodo_inicio = ?, periodo_fim = ? 
        WHERE id = ?`,
-      [nome, emailFinal, perfil, loja_id || null, pin || null, tipo_comissao || null, valor_tarefa_feita || 0, valor_desconto || 0, valor_mensal_fixo || 0, desconto_mensal || 0, id]
+      [nome, emailFinal, perfil, loja_id || null, pin || null, tipo_comissao || null, valor_tarefa_feita || 0, valor_desconto || 0, valor_mensal_fixo || 0, desconto_mensal || 0, periodo_comissao || 'mensal', periodo_inicio || null, periodo_fim || null, id]
     )
     res.json({ message: 'Usuário atualizado!' })
   } catch (erro) {

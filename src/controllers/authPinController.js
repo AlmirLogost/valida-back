@@ -84,6 +84,9 @@ exports.loginPin = async (req, res) => {
         valor_desconto: user.valor_desconto,
         valor_mensal_fixo: user.valor_mensal_fixo,
         desconto_mensal: user.desconto_mensal,
+        periodo_comissao: user.periodo_comissao || 'mensal',
+        periodo_inicio: user.periodo_inicio || null,
+        periodo_fim: user.periodo_fim || null,
         rotulo_perfil: perfilData.length > 0 ? perfilData[0].rotulo : user.perfil,
         permissoes
       }
