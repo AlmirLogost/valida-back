@@ -81,7 +81,9 @@ exports.loginPin = async (req, res) => {
         loja_id: user.loja_id,
         tipo_comissao: user.tipo_comissao,
         valor_tarefa_feita: user.valor_tarefa_feita,
+        valor_desconto: user.valor_desconto,
         valor_mensal_fixo: user.valor_mensal_fixo,
+        desconto_mensal: user.desconto_mensal,
         rotulo_perfil: perfilData.length > 0 ? perfilData[0].rotulo : user.perfil,
         permissoes
       }
