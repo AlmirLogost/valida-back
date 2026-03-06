@@ -1,11 +1,8 @@
 const bcrypt = require('bcrypt')
 const { run, query } = require('./database')
-
 const seedDatabase = async () => {
   console.log('Inserindo dados...')
   
-  // Seed perfis padrão do sistema com permissões
-  // Super Admin: todas as permissões
   const existeAdmin = await query(`SELECT id FROM perfis WHERE nome = 'super_admin'`)
   if (existeAdmin.length === 0) {
     await run(
@@ -23,7 +20,6 @@ const seedDatabase = async () => {
     )
   }
 
-  // Gerente: dashboard, criar tarefas, conferir, gerenciar equipe, relatórios
   const existeGerente = await query(`SELECT id FROM perfis WHERE nome = 'gerente' AND sistema = 1`)
   if (existeGerente.length === 0) {
     await run(
@@ -41,7 +37,6 @@ const seedDatabase = async () => {
     )
   }
 
-  // Funcionário: apenas executar tarefas
   const existeFunc = await query(`SELECT id FROM perfis WHERE nome = 'funcionario' AND sistema = 1`)
   if (existeFunc.length === 0) {
     await run(
@@ -61,13 +56,19 @@ const seedDatabase = async () => {
   console.log('Perfis padrao criados/atualizados!')
 
   const senhaHash = await bcrypt.hash('admin123', 10)
-  
-  await run(`INSERT OR IGNORE INTO usuarios (nome, email, senha, perfil, loja_id) VALUES (?, ?, ?, ?, ?)`, 
-    ['Admin VALIDA', 'admin@valida.app', senhaHash, 'super_admin', null])
-  
-  await run(`INSERT OR IGNORE INTO lojas (nome) VALUES (?)`, ['Restaurante Exemplo'])
-  
+
+  await run(
+    `INSERT INTO usuarios (nome, email, senha, perfil, loja_id) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (email) DO NOTHING`,
+    ['Admin VALIDA', 'admin@valida.app', senhaHash, 'super_admin', null]
+  )
+
+  await run(
+    `INSERT INTO lojas (nome) VALUES (?)
+     ON CONFLICT DO NOTHING`,
+    ['Restaurante Exemplo']
+  )
+
   console.log('Admin criado!')
 }
-
 module.exports = { seedDatabase }

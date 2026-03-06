@@ -139,3 +139,12 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
 .DS_Store
+
+# Banco de dados
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads dos usuários
+uploads/*
+!uploads/.gitkeep
