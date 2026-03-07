@@ -207,6 +207,15 @@ const createTables = async () => {
       UNIQUE(usuario_id, checklist_id)
     )
   `)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS checklist_datas (
+      id SERIAL PRIMARY KEY,
+      checklist_id INTEGER NOT NULL,
+      data TEXT NOT NULL,
+      tipo TEXT,
+      criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
   console.log('✅ Tabelas criadas!')
 }
 

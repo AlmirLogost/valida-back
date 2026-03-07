@@ -10,6 +10,6 @@ router.post('/execucoes', auth, execucaoController.iniciar)
 router.post('/execucoes/responder', auth, execucaoController.responderItem)
 router.post('/execucoes/validar', auth, execucaoController.validarItem)
 router.put('/execucoes/:id/concluir', auth, execucaoController.concluir)
+router.delete('/execucoes/:id/reverter', auth, execucaoController.reverter)
 
 module.exports = router
-router.delete('/execucoes/:id/reverter', auth, execucaoController.reverter)
