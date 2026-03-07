@@ -216,6 +216,33 @@ const createTables = async () => {
       criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `)
+
+  // Tabela templates
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS templates (
+      id SERIAL PRIMARY KEY,
+      titulo TEXT NOT NULL,
+      descricao TEXT,
+      categoria TEXT,
+      recorrencia TEXT DEFAULT 'diario',
+      horario_inicio TEXT,
+      horario_fim TEXT,
+      ativo INTEGER DEFAULT 1,
+      criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+
+  // Tabela template_itens
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS template_itens (
+      id SERIAL PRIMARY KEY,
+      template_id INTEGER NOT NULL,
+      titulo TEXT NOT NULL,
+      descricao TEXT,
+      ordem INTEGER DEFAULT 1,
+      critico INTEGER DEFAULT 0
+    )
+  `)
   console.log('✅ Tabelas criadas!')
 }
 
