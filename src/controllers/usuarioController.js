@@ -4,7 +4,8 @@ const { query, run } = require('../config/database')
 exports.listar = async (req, res) => {
   try {
     const { loja_id } = req.query
-    let sql = 'SELECT id, nome, email, perfil, loja_id, ativo, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim, score FROM usuarios WHERE ativo = 1'
+    const { lojaSubquery } = require('../helpers/adminLojas')
+    let sql = `SELECT id, nome, email, perfil, loja_id, ativo, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim, score FROM usuarios WHERE ativo = 1 AND (loja_id IN ${lojaSubquery(req.userId)} OR (perfil = 'super_admin' AND id = ${req.userId}))`
     const params = []
     if (loja_id) { sql += ' AND loja_id = ?'; params.push(loja_id) }
     sql += ' ORDER BY nome'

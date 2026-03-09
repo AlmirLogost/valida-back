@@ -1,4 +1,5 @@
 const { query, run } = require('../config/database')
+const { lojaSubquery } = require('../helpers/adminLojas')
 
 exports.iniciar = async (req, res) => {
   try {
@@ -200,6 +201,10 @@ exports.listar = async (req, res) => {
       LEFT JOIN lojas l ON e.loja_id = l.id
       WHERE 1=1
     `
+    // Super admin: filtra por lojas da conta
+    if (req.userPerfil === 'super_admin') {
+      sql += ` AND e.loja_id IN ${lojaSubquery(req.userId)}`
+    }
     const params = []
     
     if (loja_id) { sql += ' AND e.loja_id = ?'; params.push(loja_id) }
@@ -222,6 +227,9 @@ exports.dashboard = async (req, res) => {
     const { loja_id, data_inicio, data_fim, setor, usuario_id, momento } = req.query
     
     let where = 'WHERE 1=1'
+    if (req.userPerfil === 'super_admin') {
+      where += ` AND e.loja_id IN ${lojaSubquery(req.userId)}`
+    }
     const params = []
     
     if (loja_id) { where += ' AND e.loja_id = ?'; params.push(loja_id) }

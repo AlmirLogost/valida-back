@@ -3,9 +3,10 @@ const { query, run } = require('../config/database')
 exports.listar = async (req, res) => {
   try {
     const todas = req.query.todas === '1'
+    const adminId = req.userId
     const lojas = todas
-      ? await query('SELECT * FROM lojas WHERE ativo >= 0')
-      : await query('SELECT * FROM lojas WHERE ativo = 1')
+      ? await query('SELECT * FROM lojas WHERE ativo >= 0 AND admin_id = ?', [adminId])
+      : await query('SELECT * FROM lojas WHERE ativo = 1 AND admin_id = ?', [adminId])
     res.json(lojas)
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -16,8 +17,8 @@ exports.criar = async (req, res) => {
   try {
     const { nome, endereco, cidade, estado, telefone, setores } = req.body
     const result = await run(
-      'INSERT INTO lojas (nome, endereco, cidade, estado, telefone, setores) VALUES (?, ?, ?, ?, ?, ?)',
-      [nome, endereco, cidade, estado, telefone, setores]
+      'INSERT INTO lojas (nome, endereco, cidade, estado, telefone, setores, admin_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [nome, endereco, cidade, estado, telefone, setores, req.userId]
     )
     res.json({ id: result.lastID, message: 'Loja criada!' })
   } catch (erro) {

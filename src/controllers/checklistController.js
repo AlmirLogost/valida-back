@@ -1,4 +1,5 @@
 const { query, run } = require('../config/database')
+const { lojaSubquery } = require('../helpers/adminLojas')
 exports.listar = async (req, res) => {
   try {
     let sql = `
@@ -6,7 +7,7 @@ exports.listar = async (req, res) => {
       FROM checklists c 
       LEFT JOIN usuarios u ON c.criado_por = u.id 
       LEFT JOIN lojas l ON c.loja_id = l.id
-      WHERE c.ativo = 1
+      WHERE c.ativo = 1 AND c.loja_id IN ${lojaSubquery(req.userId)}
     `
     if (req.userPerfil !== 'super_admin') {
       const user = await query('SELECT loja_id FROM usuarios WHERE id = ?', [req.userId])
