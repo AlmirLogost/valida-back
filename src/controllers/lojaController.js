@@ -2,7 +2,10 @@ const { query, run } = require('../config/database')
 
 exports.listar = async (req, res) => {
   try {
-    const lojas = await query('SELECT * FROM lojas WHERE ativo = 1')
+    const todas = req.query.todas === '1'
+    const lojas = todas
+      ? await query('SELECT * FROM lojas WHERE ativo >= 0')
+      : await query('SELECT * FROM lojas WHERE ativo = 1')
     res.json(lojas)
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -25,10 +28,11 @@ exports.criar = async (req, res) => {
 exports.atualizar = async (req, res) => {
   try {
     const { id } = req.params
-    const { nome, endereco, cidade, estado, telefone, setores } = req.body
+    const { nome, endereco, cidade, estado, telefone, setores, ativo } = req.body
+    const ativoVal = ativo === undefined ? 1 : (ativo === false || ativo === 0 || ativo === '0') ? 0 : 1
     await run(
-      'UPDATE lojas SET nome = ?, endereco = ?, cidade = ?, estado = ?, telefone = ?, setores = ? WHERE id = ?',
-      [nome, endereco, cidade, estado, telefone, setores, id]
+      'UPDATE lojas SET nome = ?, endereco = ?, cidade = ?, estado = ?, telefone = ?, setores = ?, ativo = ? WHERE id = ?',
+      [nome, endereco, cidade, estado, telefone, setores, ativoVal, id]
     )
     res.json({ message: 'Loja atualizada!' })
   } catch (erro) {
@@ -39,7 +43,7 @@ exports.atualizar = async (req, res) => {
 exports.deletar = async (req, res) => {
   try {
     const { id } = req.params
-    await run('UPDATE lojas SET ativo = 0 WHERE id = ?', [id])
+    await run('UPDATE lojas SET ativo = -1 WHERE id = ?', [id])
     res.json({ message: 'Loja desativada!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
