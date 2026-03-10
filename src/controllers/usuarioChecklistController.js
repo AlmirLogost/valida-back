@@ -5,7 +5,7 @@ exports.listarChecklists = async (req, res) => {
     const { usuario_id } = req.params
     
     const vinculados = await query(`
-      SELECT c.*, uc.id as vinculo_id
+      SELECT c.*, uc.id as vinculo_id, uc.bonus_override, uc.desconto_override
       FROM checklists c
       INNER JOIN usuario_checklists uc ON c.id = uc.checklist_id
       WHERE uc.usuario_id = ? AND uc.ativo = 1 AND c.ativo = 1
@@ -115,9 +115,10 @@ exports.listarTodos = async (req, res) => {
   try {
     const { query } = require('../config/database')
     const vinculos = await query(`
-      SELECT uc.*, u.nome as usuario_nome 
+      SELECT uc.*, u.nome as usuario_nome, c.titulo as checklist_titulo
       FROM usuario_checklists uc
       LEFT JOIN usuarios u ON uc.usuario_id = u.id
+      LEFT JOIN checklists c ON uc.checklist_id = c.id
       WHERE uc.ativo = 1
     `)
     res.json(vinculos)
