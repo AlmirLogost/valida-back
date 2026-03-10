@@ -97,6 +97,20 @@ exports.desvincular = async (req, res) => {
   }
 }
 
+
+exports.salvarOverrides = async (req, res) => {
+  try {
+    const { overrides } = req.body // [{id, bonus_override, desconto_override}]
+    for (const o of overrides) {
+      await run(
+        'UPDATE usuario_checklists SET bonus_override = ?, desconto_override = ? WHERE id = ?',
+        [o.bonus_override ?? null, o.desconto_override ?? null, o.id]
+      )
+    }
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ erro: e.message }) }
+}
+
 exports.listarTodos = async (req, res) => {
   try {
     const { query } = require('../config/database')

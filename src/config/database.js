@@ -204,6 +204,8 @@ const createTables = async () => {
       checklist_id INTEGER NOT NULL,
       ativo INTEGER DEFAULT 1,
       vinculado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      bonus_override NUMERIC DEFAULT NULL,
+      desconto_override NUMERIC DEFAULT NULL,
       UNIQUE(usuario_id, checklist_id)
     )
   `)
