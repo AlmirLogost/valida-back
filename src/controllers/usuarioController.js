@@ -123,3 +123,87 @@ exports.deletar = async (req, res) => {
     res.status(500).json({ erro: erro.message })
   }
 }
+
+exports.relatorioComissao = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { mes, ano } = req.query
+    const hoje = new Date()
+    const mesRef = parseInt(mes || hoje.getMonth() + 1)
+    const anoRef = parseInt(ano || hoje.getFullYear())
+
+    const mesStr = String(mesRef).padStart(2, '0')
+    const dataInicio = `${anoRef}-${mesStr}-01`
+    const ultimoDia = new Date(anoRef, mesRef, 0).getDate()
+    const dataFim = `${anoRef}-${mesStr}-${String(ultimoDia).padStart(2, '0')}`
+
+    const [usuario] = await query('SELECT * FROM usuarios WHERE id = ?', [id])
+    if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado' })
+
+    const vinculos = await query(
+      'SELECT uc.*, c.titulo FROM usuario_checklists uc LEFT JOIN checklists c ON uc.checklist_id = c.id WHERE uc.usuario_id = ? AND uc.ativo = 1',
+      [id]
+    )
+
+    const execucoes = await query(
+      `SELECT e.*, c.titulo as checklist_titulo
+       FROM execucoes e
+       LEFT JOIN checklists c ON e.checklist_id = c.id
+       WHERE e.usuario_id = ? AND e.status = 'concluido'
+       AND DATE(e.iniciado_em) >= ? AND DATE(e.iniciado_em) <= ?`,
+      [id, dataInicio, dataFim]
+    )
+
+    // Agrupa execuções por dia
+    const porDia = {}
+    for (let d = 1; d <= ultimoDia; d++) {
+      const dStr = `${anoRef}-${mesStr}-${String(d).padStart(2, '0')}`
+      const execDia = execucoes.filter(e => {
+        const dt = new Date(e.iniciado_em.replace(' ', 'T') + (e.iniciado_em.includes('Z') ? '' : 'Z'))
+        const local = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0')
+        return local === dStr
+      })
+
+      const feitasIds = new Set(execDia.map(e => e.checklist_id))
+      const tarefasDia = vinculos.map(v => {
+        const feita = feitasIds.has(v.checklist_id)
+        const bonus = feita ? (v.bonus_override ?? usuario.valor_tarefa_feita ?? 0) : 0
+        const desconto = !feita ? (v.desconto_override ?? usuario.valor_desconto ?? usuario.desconto_mensal ?? 0) : 0
+        return {
+          checklist_id: v.checklist_id,
+          titulo: v.titulo,
+          feita,
+          bonus: Number(bonus),
+          desconto: Number(desconto)
+        }
+      })
+
+      const descontoDia = tarefasDia.reduce((s, t) => s + t.desconto, 0)
+      const valorBase = usuario.tipo_comissao === 'mensal' ? 0 : (usuario.valor_mensal_fixo || 0)
+
+      porDia[d] = {
+        data: dStr,
+        tarefas: tarefasDia,
+        feitas: tarefasDia.filter(t => t.feita).length,
+        total: vinculos.length,
+        desconto: descontoDia
+      }
+    }
+
+    const totalFeitas = execucoes.length
+    const totalEsperadas = vinculos.length * ultimoDia
+    const totalDescontos = Object.values(porDia).reduce((s, d) => s + d.desconto, 0)
+    const base = usuario.valor_mensal_fixo || 0
+    const aPagar = Math.max(0, base - totalDescontos)
+
+    res.json({
+      usuario: { id: usuario.id, nome: usuario.nome, tipo_comissao: usuario.tipo_comissao, valor_mensal_fixo: usuario.valor_mensal_fixo, valor_desconto: usuario.valor_desconto, desconto_mensal: usuario.desconto_mensal, periodo_comissao: usuario.periodo_comissao },
+      periodo: { mes: mesRef, ano: anoRef, dataInicio, dataFim, ultimoDia },
+      resumo: { totalFeitas, totalEsperadas, totalDescontos, base, aPagar },
+      dias: porDia
+    })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ erro: 'Erro ao gerar relatório' })
+  }
+}
