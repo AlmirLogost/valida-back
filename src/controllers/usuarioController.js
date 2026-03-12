@@ -159,7 +159,7 @@ exports.relatorioComissao = async (req, res) => {
     for (let d = 1; d <= ultimoDia; d++) {
       const dStr = `${anoRef}-${mesStr}-${String(d).padStart(2, '0')}`
       const execDia = execucoes.filter(e => {
-        const dt = new Date(e.iniciado_em.replace(' ', 'T') + (e.iniciado_em.includes('Z') ? '' : 'Z'))
+        const dt = new Date(e.iniciado_em)
         const local = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0')
         return local === dStr
       })

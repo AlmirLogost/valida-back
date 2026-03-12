@@ -27,14 +27,14 @@ exports.criar = async (req, res) => {
     const b = req.body
     const result = await run(
       `INSERT INTO checklists (titulo, descricao, categoria, loja_id, criado_por, 
-       horario_inicio, horario_fim, recorrencia, data_mensal, dias_semana, momento,
+       horario_inicio, horario_fim, recorrencia, data_mensal, data_pontual, dias_semana, momento,
        tipo_campo, evidencia_obrigatoria, tipo_evidencia, critico,
        subtipo_numerico, peso, rotulo_positivo, rotulo_negativo,
        data_inicio, data_termino, repeticao_intervalo, tolerancia_min) 
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [b.titulo, b.descricao, b.categoria, b.loja_id||null, req.userId, 
        b.horario_inicio, b.horario_fim, b.recorrencia,
-       b.data_mensal||null, b.dias_semana||null, b.momento||'outros',
+       b.data_mensal||null, b.data_pontual||null, b.dias_semana||null, b.momento||'outros',
        b.tipo_campo||'boolean', b.evidencia_obrigatoria||0, b.tipo_evidencia||'imagem',
        b.critico||0, b.subtipo_numerico||'inteiro', b.peso||1,
        b.rotulo_positivo||'Feito', b.rotulo_negativo||'Nao Feito',
@@ -51,13 +51,13 @@ exports.atualizar = async (req, res) => {
     const b = req.body
     await run(
       `UPDATE checklists SET titulo=?, descricao=?, categoria=?, loja_id=?, 
-       horario_inicio=?, horario_fim=?, recorrencia=?, data_mensal=?, dias_semana=?, momento=?,
+       horario_inicio=?, horario_fim=?, recorrencia=?, data_mensal=?, data_pontual=?, dias_semana=?, momento=?,
        tipo_campo=?, evidencia_obrigatoria=?, tipo_evidencia=?, critico=?,
        subtipo_numerico=?, peso=?, rotulo_positivo=?, rotulo_negativo=?,
        data_inicio=?, data_termino=?, repeticao_intervalo=?, tolerancia_min=?
        WHERE id=?`,
       [b.titulo, b.descricao, b.categoria, b.loja_id, b.horario_inicio, b.horario_fim, 
-       b.recorrencia, b.data_mensal||null, b.dias_semana||null, b.momento||'outros',
+       b.recorrencia, b.data_mensal||null, b.data_pontual||null, b.dias_semana||null, b.momento||'outros',
        b.tipo_campo||'boolean', b.evidencia_obrigatoria||0, b.tipo_evidencia||'imagem',
        b.critico||0, b.subtipo_numerico||'inteiro', b.peso||1,
        b.rotulo_positivo||'Feito', b.rotulo_negativo||'Nao Feito',
