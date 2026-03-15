@@ -19,7 +19,7 @@ exports.loginPin = async (req, res) => {
     // Fallback: se tabela perfis vazia, usar padrão
     const perfilFilter = slugsPin.length > 0
       ? `AND perfil IN (${slugsPin.map(() => '?').join(',')})`
-      : `AND perfil IN ('funcionario', 'gerente')`
+      : `AND perfil IN ('operador', 'fiscal')`
     
     // Busca por nome (case insensitive)
     const users = await query(

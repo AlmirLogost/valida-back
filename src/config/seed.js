@@ -20,37 +20,37 @@ const seedDatabase = async () => {
     )
   }
 
-  const existeGerente = await query(`SELECT id FROM perfis WHERE nome = 'gerente' AND sistema = 1`)
-  if (existeGerente.length === 0) {
+  const existeFiscal = await query(`SELECT id FROM perfis WHERE nome = 'fiscal' AND sistema = 1`)
+  if (existeFiscal.length === 0) {
     await run(
       `INSERT INTO perfis (nome, rotulo, metodo_login, pode_acessar_painel, cor, sistema, ordem,
         perm_dashboard, perm_criar_tarefas, perm_executar_tarefas, perm_conferir,
         perm_gerenciar_equipe, perm_gerenciar_lojas, perm_relatorios, perm_configuracoes)
        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 0, 1, 1, 0, 1, 0)`,
-      ['gerente', 'Gerente', 'pin', 1, '#e65100', 1, 1]
+      ['fiscal', 'Fiscal', 'pin', 1, '#3483fa', 1, 1]
     )
   } else {
     await run(
       `UPDATE perfis SET perm_dashboard=1, perm_criar_tarefas=1, perm_executar_tarefas=0, perm_conferir=1,
         perm_gerenciar_equipe=1, perm_gerenciar_lojas=0, perm_relatorios=1, perm_configuracoes=0
-       WHERE nome = 'gerente' AND sistema = 1`
+       WHERE nome = 'fiscal' AND sistema = 1`
     )
   }
 
-  const existeFunc = await query(`SELECT id FROM perfis WHERE nome = 'funcionario' AND sistema = 1`)
-  if (existeFunc.length === 0) {
+  const existeOperador = await query(`SELECT id FROM perfis WHERE nome = 'operador' AND sistema = 1`)
+  if (existeOperador.length === 0) {
     await run(
       `INSERT INTO perfis (nome, rotulo, metodo_login, pode_acessar_painel, cor, sistema, ordem,
         perm_dashboard, perm_criar_tarefas, perm_executar_tarefas, perm_conferir,
         perm_gerenciar_equipe, perm_gerenciar_lojas, perm_relatorios, perm_configuracoes)
        VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, 0, 0, 0, 0, 0)`,
-      ['funcionario', 'Funcionario', 'pin', 0, '#2e7d32', 1, 2]
+      ['operador', 'Operador', 'pin', 0, '#2e7d32', 1, 2]
     )
   } else {
     await run(
       `UPDATE perfis SET perm_dashboard=0, perm_criar_tarefas=0, perm_executar_tarefas=1, perm_conferir=0,
         perm_gerenciar_equipe=0, perm_gerenciar_lojas=0, perm_relatorios=0, perm_configuracoes=0
-       WHERE nome = 'funcionario' AND sistema = 1`
+       WHERE nome = 'operador' AND sistema = 1`
     )
   }
   console.log('Perfis padrao criados/atualizados!')
