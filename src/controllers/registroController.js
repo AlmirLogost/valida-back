@@ -20,6 +20,18 @@ exports.registrar = async (req, res) => {
 
     const users = await query('SELECT * FROM usuarios WHERE email = ?', [email])
     const user = users[0]
+
+    // Criar subscription trial no plano Profissional por 14 dias
+    const planos = await query("SELECT id FROM planos WHERE slug = 'profissional' LIMIT 1")
+    if (planos.length) {
+      const trialFim = new Date()
+      trialFim.setDate(trialFim.getDate() + 14)
+      await run(
+        'INSERT INTO subscriptions (admin_id, plano_id, status, trial_fim) VALUES (?, ?, ?, ?)',
+        [user.id, planos[0].id, 'trial', trialFim.toISOString()]
+      )
+    }
+
     const token = jwt.sign({ id: user.id, perfil: user.perfil }, process.env.JWT_SECRET || 'valida_jwt_secret_2024', { expiresIn: '90d' })
 
     res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil } })

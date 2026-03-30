@@ -2,10 +2,11 @@ const express = require('express')
 const router = express.Router()
 const lojaController = require('../controllers/lojaController')
 const auth = require('../middlewares/auth')
+const { requirePlanoAtivo, checkLimite } = require('../middlewares/planos')
 
 router.get('/lojas', auth, lojaController.listar)
 router.get('/lojas/:id', auth, lojaController.obterPorId)
-router.post('/lojas', auth, lojaController.criar)
+router.post('/lojas', auth, requirePlanoAtivo, checkLimite('lojas'), lojaController.criar)
 router.put('/lojas/:id', auth, lojaController.atualizar)
 router.delete('/lojas/:id', auth, lojaController.deletar)
 

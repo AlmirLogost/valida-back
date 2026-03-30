@@ -21,6 +21,7 @@ const perfilRoutes           = require('./src/routes/perfilRoutes')
 const meRoutes               = require('./src/routes/meRoutes')
 const resetSenhaRoutes       = require('./src/routes/resetSenhaRoutes')
 const registroRoutes         = require('./src/routes/registroRoutes')
+const subscriptionRoutes     = require('./src/routes/subscriptionRoutes')
 
 const app = express()
 app.use(helmet({ contentSecurityPolicy: false }))
@@ -42,6 +43,7 @@ app.use('/api', usuarioChecklistRoutes)
 app.use('/api', templateRoutes)
 app.use('/api', checklistDataRoutes)
 app.use('/api', perfilRoutes)
+app.use('/api', subscriptionRoutes)
 
 // Servir frontend buildado (produção)
 app.use((req, res, next) => {
