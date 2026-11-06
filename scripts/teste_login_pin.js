@@ -112,6 +112,19 @@ async function main() {
 
     console.log('\nTestando login do funcionário por celular + PIN...\n')
 
+    console.log('-- celular é obrigatório ao criar colaborador com PIN (1.4, ponto 2) --')
+    const semCelular = await chamar('POST', '/usuarios', tokenDonoA, {
+      nome: `${PREFIXO}Sem Celular`, perfil: 'operador', loja_id: lojaA.lastID, pin: '1234'
+    })
+    if (semCelular.status === 400 && /elular/.test(semCelular.body?.erro || '')) ok('rejeita criar colaborador sem celular')
+    else falhou('rejeita criar colaborador sem celular', JSON.stringify(semCelular))
+
+    const celularCurto = await chamar('POST', '/usuarios', tokenDonoA, {
+      nome: `${PREFIXO}Celular Curto`, perfil: 'operador', loja_id: lojaA.lastID, celular: '123', pin: '1234'
+    })
+    if (celularCurto.status === 400 && /elular/.test(celularCurto.body?.erro || '')) ok('rejeita celular com formato inválido (poucos dígitos)')
+    else falhou('rejeita celular com formato inválido (poucos dígitos)', JSON.stringify(celularCurto))
+
     console.log('-- criação via API e hash no banco --')
     const celularX = '11999990001'
     const criaFuncA = await chamar('POST', '/usuarios', tokenDonoA, {

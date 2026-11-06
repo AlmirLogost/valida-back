@@ -45,9 +45,15 @@ exports.criar = async (req, res) => {
     const metodoLogin = perfilConfig.length > 0 ? perfilConfig[0].metodo_login : 'email_senha'
 
     if (metodoLogin === 'pin') {
-      // Perfis com login por PIN: PIN obrigatório, email opcional
+      // Perfis com login por PIN: PIN e celular obrigatórios, email opcional.
+      // Celular é o que o colaborador usa pra entrar — sem ele, ninguém
+      // consegue logar com esse perfil.
       if (!pin || !/^\d{4}$/.test(pin)) {
         return res.status(400).json({ erro: 'PIN de 4 dígitos é obrigatório para este perfil' })
+      }
+      const celularNormalizado = normalizarCelular(celular)
+      if (!celularNormalizado || celularNormalizado.length < 10 || celularNormalizado.length > 11) {
+        return res.status(400).json({ erro: 'Celular é obrigatório e deve ter DDD + número (10 ou 11 dígitos)' })
       }
     } else {
       // Perfis com login por email/senha
