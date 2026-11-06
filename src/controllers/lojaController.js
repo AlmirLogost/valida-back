@@ -34,7 +34,7 @@ exports.atualizar = async (req, res) => {
   try {
     const { id } = req.params
     if (!(await lojaPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Loja não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Loja não encontrada' })
     }
     const { nome, endereco, cidade, estado, telefone, setores, ativo } = req.body
     const ativoVal = ativo === undefined ? 1 : (ativo === false || ativo === 0 || ativo === '0') ? 0 : 1
@@ -52,7 +52,7 @@ exports.deletar = async (req, res) => {
   try {
     const { id } = req.params
     if (!(await lojaPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Loja não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Loja não encontrada' })
     }
     await run('UPDATE lojas SET ativo = -1 WHERE id = ?', [id])
     res.json({ message: 'Loja desativada!' })
@@ -66,7 +66,7 @@ exports.obterPorId = async (req, res) => {
   try {
     const { id } = req.params
     if (!(await lojaPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Loja não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Loja não encontrada' })
     }
     const rows = await query('SELECT * FROM lojas WHERE id = ?', [id])
     if (!rows.length) return res.status(404).json({ erro: 'Loja não encontrada' })
@@ -78,7 +78,7 @@ exports.toggleAberta = async (req, res) => {
   try {
     const { id } = req.params
     if (!(await lojaPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Loja não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Loja não encontrada' })
     }
     const loja = await query('SELECT aberta FROM lojas WHERE id = ?', [id])
     if (!loja.length) return res.status(404).json({ erro: 'Loja não encontrada' })
@@ -93,7 +93,7 @@ exports.atualizarReset = async (req, res) => {
   try {
     const { id } = req.params
     if (!(await lojaPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Loja não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Loja não encontrada' })
     }
     await run('UPDATE lojas SET hora_reset = ? WHERE id = ?', [req.body.hora_reset, id])
     res.json({ ok: true })
@@ -105,7 +105,7 @@ exports.listarHorarios = async (req, res) => {
   try {
     const { id } = req.params
     if (!(await lojaPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Loja não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Loja não encontrada' })
     }
     const rows = await query('SELECT * FROM loja_horarios WHERE loja_id = ? ORDER BY dia_semana', [id])
     res.json(rows)
@@ -117,7 +117,7 @@ exports.salvarHorarios = async (req, res) => {
   try {
     const { id } = req.params
     if (!(await lojaPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Loja não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Loja não encontrada' })
     }
     await run('DELETE FROM loja_horarios WHERE loja_id = ?', [id])
     for (const h of req.body.horarios) {
@@ -133,7 +133,7 @@ exports.listarFechamentos = async (req, res) => {
   try {
     const { id } = req.params
     if (!(await lojaPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Loja não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Loja não encontrada' })
     }
     const rows = await query('SELECT * FROM loja_fechamentos WHERE loja_id = ? ORDER BY data', [id])
     res.json(rows)
@@ -145,7 +145,7 @@ exports.adicionarFechamento = async (req, res) => {
   try {
     const { id } = req.params
     if (!(await lojaPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Loja não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Loja não encontrada' })
     }
     const r = await run('INSERT INTO loja_fechamentos (loja_id, data, motivo) VALUES (?,?,?)',
       [id, req.body.data, req.body.motivo || null])
@@ -161,7 +161,7 @@ exports.removerFechamento = async (req, res) => {
     const fechamento = await query('SELECT loja_id FROM loja_fechamentos WHERE id = ?', [fid])
     if (!fechamento.length) return res.status(404).json({ erro: 'Fechamento não encontrado' })
     if (!(await lojaPertenceAConta(fechamento[0].loja_id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Fechamento não encontrado ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Fechamento não encontrado' })
     }
     await run('DELETE FROM loja_fechamentos WHERE id = ?', [fid])
     res.json({ ok: true })

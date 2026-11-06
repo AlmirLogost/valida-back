@@ -13,7 +13,7 @@ exports.iniciar = async (req, res) => {
     const { checklist_id } = req.body
 
     if (!(await checklistPertenceAConta(checklist_id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Tarefa não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Tarefa não encontrada' })
     }
 
     const checklistItens = await query('SELECT * FROM checklist_itens WHERE checklist_id = ? ORDER BY ordem', [checklist_id])
@@ -65,7 +65,7 @@ exports.responderItem = async (req, res) => {
     const { execucao_id, item_id, concluido, valor_resposta, observacao, evidencia_base64 } = req.body
 
     if (!(await execucaoPertenceAConta(execucao_id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Execução não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Execução não encontrada' })
     }
 
     // Tenta atualizar pelo checklist_item_id exato
@@ -118,7 +118,7 @@ exports.concluir = async (req, res) => {
     const { score } = req.body
 
     if (!(await execucaoPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Execução não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Execução não encontrada' })
     }
 
     // Buscar execução para pegar o checklist
@@ -174,7 +174,7 @@ exports.buscarExecucao = async (req, res) => {
     const { id } = req.params
 
     if (!(await execucaoPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Execução não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Execução não encontrada' })
     }
 
     const execucao = await query(`

@@ -39,6 +39,8 @@ function ok(nome) { console.log(`  ✓ ${nome}`) }
 function falhou(nome, detalhe) { falhas++; console.error(`  ✗ ${nome} — ${detalhe}`) }
 
 async function limpar() {
+  await run('DELETE FROM execucoes_itens WHERE execucao_id IN (SELECT id FROM execucoes WHERE checklist_id IN (SELECT id FROM checklists WHERE titulo LIKE ?))', [`${PREFIXO}%`])
+  await run('DELETE FROM execucoes WHERE checklist_id IN (SELECT id FROM checklists WHERE titulo LIKE ?)', [`${PREFIXO}%`])
   await run('DELETE FROM usuario_checklists WHERE checklist_id IN (SELECT id FROM checklists WHERE titulo LIKE ?)', [`${PREFIXO}%`])
   await run('DELETE FROM checklist_datas WHERE checklist_id IN (SELECT id FROM checklists WHERE titulo LIKE ?)', [`${PREFIXO}%`])
   await run('DELETE FROM checklist_itens WHERE checklist_id IN (SELECT id FROM checklists WHERE titulo LIKE ?)', [`${PREFIXO}%`])
@@ -134,6 +136,12 @@ async function main() {
     // Template é global (não pertence a conta nenhuma)
     const template = await run(`INSERT INTO templates (titulo) VALUES (?)`, [`${PREFIXO}Template`])
 
+    // Execução da Tarefa B, para testar as rotas de execução (1.1c)
+    const execB = await run(
+      `INSERT INTO execucoes (checklist_id, usuario_id, loja_id, status) VALUES (?, ?, ?, 'em_andamento')`,
+      [checkB.lastID, funcB.lastID, lojaB.lastID]
+    )
+
     // ---------- Sobe o servidor numa porta isolada ----------
     child = spawn('node', ['server.js'], {
       cwd: path.join(__dirname, '..'),
@@ -177,7 +185,31 @@ async function main() {
     esperarStatus('A NÃO altera overrides do vínculo da conta B', await chamar('PUT', '/usuario-checklists/overrides', tokenA, { overrides: [{ id: vinculoB.lastID, bonus_override: 999 }] }), 404)
     esperarStatus('A vincula o próprio Func A à própria Tarefa A', await chamar('POST', '/usuario-checklists', tokenA, { usuario_id: funcA.lastID, checklist_id: checkA.lastID }), 200)
 
+    console.log('-- 404 (não 403) nas rotas de loja/tarefa/usuário/execução (1.1c) --')
+    esperarStatus('A NÃO vê a Loja B por id', await chamar('GET', `/lojas/${lojaB.lastID}`, tokenA), 404)
+    esperarStatus('A NÃO edita a Loja B', await chamar('PUT', `/lojas/${lojaB.lastID}`, tokenA, { nome: 'x' }), 404)
+    esperarStatus('A NÃO apaga a Loja B', await chamar('DELETE', `/lojas/${lojaB.lastID}`, tokenA), 404)
+    esperarStatus('A NÃO edita a Tarefa B', await chamar('PUT', `/checklists/${checkB.lastID}`, tokenA, { titulo: 'x', recorrencia: 'diario' }), 404)
+    esperarStatus('A NÃO apaga a Tarefa B', await chamar('DELETE', `/checklists/${checkB.lastID}`, tokenA), 404)
+    esperarStatus('A NÃO pausa/retoma a Tarefa B', await chamar('PATCH', `/checklists/${checkB.lastID}/pausar`, tokenA, {}), 404)
+    esperarStatus('A NÃO edita o Func B', await chamar('PUT', `/usuarios/${funcB.lastID}`, tokenA, { nome: 'x', perfil: 'operador' }), 404)
+    esperarStatus('A NÃO apaga o Func B', await chamar('DELETE', `/usuarios/${funcB.lastID}`, tokenA), 404)
+    esperarStatus('A NÃO lê a execução da conta B', await chamar('GET', `/execucoes/${execB.lastID}`, tokenA), 404)
+    esperarStatus('A NÃO conclui a execução da conta B', await chamar('PUT', `/execucoes/${execB.lastID}/concluir`, tokenA, { score: 10 }), 404)
+
     console.log('\n-- confirma que nada da conta B foi alterado --')
+    const lojaBAinda = await query('SELECT ativo FROM lojas WHERE id = ?', [lojaB.lastID])
+    if (lojaBAinda[0]?.ativo === 1) ok('Loja B continua ativa (não foi apagada)')
+    else falhou('Loja B continua ativa (não foi apagada)', JSON.stringify(lojaBAinda[0]))
+
+    const checkBAinda = await query('SELECT ativo FROM checklists WHERE id = ?', [checkB.lastID])
+    if (checkBAinda[0]?.ativo === 1) ok('Tarefa B continua ativa (não foi apagada)')
+    else falhou('Tarefa B continua ativa (não foi apagada)', JSON.stringify(checkBAinda[0]))
+
+    const execBAinda = await query('SELECT status FROM execucoes WHERE id = ?', [execB.lastID])
+    if (execBAinda[0]?.status === 'em_andamento') ok('Execução B continua em andamento (não foi concluída)')
+    else falhou('Execução B continua em andamento (não foi concluída)', JSON.stringify(execBAinda[0]))
+
     const itemBAinda = await query('SELECT * FROM checklist_itens WHERE id = ?', [itemB.lastID])
     if (itemBAinda.length) ok('Item B ainda existe (não foi apagado)')
     else falhou('Item B ainda existe (não foi apagado)', 'o item desapareceu!')

@@ -167,7 +167,7 @@ exports.listarChecklistsLoja = async (req, res) => {
     const { loja_id } = req.params
 
     if (!(await lojaPertenceAConta(loja_id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Loja não encontrada ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Loja não encontrada' })
     }
 
     const usuarios = await query(

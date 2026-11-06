@@ -26,7 +26,7 @@ exports.criar = async (req, res) => {
       const { getLojaIds } = require('../helpers/adminLojas')
       const lojaIds = await getLojaIds(req.userId, req.userPerfil)
       if (!lojaIds.includes(parseInt(loja_id))) {
-        return res.status(403).json({ erro: 'Loja inválida ou não pertence à sua conta.' })
+        return res.status(404).json({ erro: 'Loja não encontrada' })
       }
     }
 
@@ -83,12 +83,12 @@ exports.atualizar = async (req, res) => {
 
     const { usuarioPertenceAConta, getLojaIds } = require('../helpers/adminLojas')
     if (!(await usuarioPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Usuário não encontrado ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Usuário não encontrado' })
     }
     if (loja_id) {
       const lojaIds = await getLojaIds(req.userId, req.userPerfil)
       if (!lojaIds.includes(parseInt(loja_id))) {
-        return res.status(403).json({ erro: 'Loja inválida ou não pertence à sua conta.' })
+        return res.status(404).json({ erro: 'Loja não encontrada' })
       }
     }
 
@@ -140,7 +140,7 @@ exports.deletar = async (req, res) => {
     const { id } = req.params
     const { usuarioPertenceAConta } = require('../helpers/adminLojas')
     if (!(await usuarioPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Usuário não encontrado ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Usuário não encontrado' })
     }
     await run('UPDATE usuarios SET ativo = 0 WHERE id = ?', [id])
     res.json({ message: 'Usuário desativado!' })
@@ -154,7 +154,7 @@ exports.relatorioComissao = async (req, res) => {
     const { id } = req.params
     const { usuarioPertenceAConta } = require('../helpers/adminLojas')
     if (!(await usuarioPertenceAConta(id, req.userId, req.userPerfil))) {
-      return res.status(403).json({ erro: 'Usuário não encontrado ou não pertence à sua conta.' })
+      return res.status(404).json({ erro: 'Usuário não encontrado' })
     }
     const { mes, ano } = req.query
     const hoje = new Date()
