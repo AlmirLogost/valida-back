@@ -1,4 +1,15 @@
 require('dotenv').config()
+
+// O servidor não pode iniciar sem uma chave de JWT própria vinda do .env.
+// Antes, cada arquivo tinha sua própria chave "reserva" escrita no código
+// (e todas diferentes entre si) — isso é inseguro e causa bugs estranhos de
+// login. Agora existe uma única fonte: a variável JWT_SECRET.
+if (!process.env.JWT_SECRET) {
+  console.error('❌ Variável JWT_SECRET não configurada no .env — o servidor não pode iniciar.')
+  console.error('   Defina JWT_SECRET no arquivo .env (veja .env.example) e suba o servidor de novo.')
+  process.exit(1)
+}
+
 const express = require('express')
 const cors = require('cors')
 const helmet = require('helmet')

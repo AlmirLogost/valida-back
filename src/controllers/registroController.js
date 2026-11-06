@@ -32,7 +32,8 @@ exports.registrar = async (req, res) => {
       )
     }
 
-    const token = jwt.sign({ id: user.id, perfil: user.perfil }, process.env.JWT_SECRET || 'valida_jwt_secret_2024', { expiresIn: '90d' })
+    // JWT_SECRET vem só do .env — o servidor nem inicia sem ela (ver server.js)
+    const token = jwt.sign({ id: user.id, perfil: user.perfil }, process.env.JWT_SECRET, { expiresIn: '90d' })
 
     res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil } })
   } catch (e) {

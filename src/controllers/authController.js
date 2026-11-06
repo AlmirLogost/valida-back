@@ -29,10 +29,10 @@ exports.login = async (req, res) => {
       return res.status(401).json({ erro: 'Senha incorreta' });
     }
     
-    // Gera o token JWT (certifique-se de ter JWT_SECRET no seu arquivo .env)
+    // JWT_SECRET vem só do .env — o servidor nem inicia sem ela (ver server.js)
     const token = jwt.sign(
-      { id: user.id, perfil: user.perfil }, 
-      process.env.JWT_SECRET || 'sua_chave_secreta_aqui', 
+      { id: user.id, perfil: user.perfil },
+      process.env.JWT_SECRET,
       { expiresIn: '90d' }
     );
     console.log('✅ Token gerado:', token.substring(0, 20) + '...'); 
