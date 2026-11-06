@@ -1,12 +1,22 @@
 const bcrypt = require('bcrypt')
 const { query, run } = require('../config/database')
 
+// Guarda só dígitos (ex.: "(11) 99999-9999" -> "11999999999"), ou null se vazio.
+// Usado tanto pra salvar o celular do colaborador quanto pra buscar no login por PIN.
+function normalizarCelular(valor) {
+  if (!valor) return null
+  const digitos = String(valor).replace(/\D/g, '')
+  return digitos || null
+}
+
 exports.listar = async (req, res) => {
   try {
     const { loja_id } = req.query
     const { getLojaIds } = require('../helpers/adminLojas')
     const lojaIds = await getLojaIds(req.userId, req.userPerfil)
-    let sql = `SELECT id, nome, email, perfil, loja_id, ativo, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim, score FROM usuarios WHERE ativo = 1 AND (loja_id = ANY(?) OR (perfil = 'super_admin' AND id = ?))`
+    // "pin" nunca é devolvido pro front — ele guarda um hash, não serve pra exibir,
+    // e nem o hash deveria sair da API sem necessidade.
+    let sql = `SELECT id, nome, email, perfil, loja_id, ativo, whatsapp AS celular, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim, score FROM usuarios WHERE ativo = 1 AND (loja_id = ANY(?) OR (perfil = 'super_admin' AND id = ?))`
     const params = [lojaIds, req.userId]
     if (loja_id) { sql += ' AND loja_id = ?'; params.push(loja_id) }
     sql += ' ORDER BY nome'
@@ -19,7 +29,7 @@ exports.listar = async (req, res) => {
 
 exports.criar = async (req, res) => {
   try {
-    const { nome, email, senha, perfil, loja_id, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim } = req.body
+    const { nome, email, senha, perfil, loja_id, pin, celular, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim } = req.body
 
     // A loja do novo colaborador precisa pertencer à conta de quem está criando
     if (loja_id) {
@@ -64,11 +74,13 @@ exports.criar = async (req, res) => {
 
     const emailFinal = email || (nome.toLowerCase().replace(/\s+/g, '.') + '.' + Date.now() + '@func.valida.local')
     const senhaHash = await bcrypt.hash(senha || pin, 10)
+    // PIN nunca fica em texto puro no banco — só o hash, igual senha.
+    const pinHash = pin ? await bcrypt.hash(pin, 10) : null
 
     const result = await run(
-      `INSERT INTO usuarios (nome, email, senha, perfil, loja_id, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [nome, emailFinal, senhaHash, perfil, loja_id || null, pin || null, tipo_comissao || null, valor_tarefa_feita || 0, valor_desconto || 0, valor_mensal_fixo || 0, desconto_mensal || 0, periodo_comissao || 'mensal', periodo_inicio || null, periodo_fim || null]
+      `INSERT INTO usuarios (nome, email, senha, perfil, loja_id, pin, whatsapp, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [nome, emailFinal, senhaHash, perfil, loja_id || null, pinHash, normalizarCelular(celular), tipo_comissao || null, valor_tarefa_feita || 0, valor_desconto || 0, valor_mensal_fixo || 0, desconto_mensal || 0, periodo_comissao || 'mensal', periodo_inicio || null, periodo_fim || null]
     )
     res.json({ id: result.lastID, message: 'Usuário criado!' })
   } catch (erro) {
@@ -79,7 +91,7 @@ exports.criar = async (req, res) => {
 exports.atualizar = async (req, res) => {
   try {
     const { id } = req.params
-    const { nome, email, perfil, loja_id, pin, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim } = req.body
+    const { nome, email, perfil, loja_id, pin, celular, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim } = req.body
 
     const { usuarioPertenceAConta, getLojaIds } = require('../helpers/adminLojas')
     if (!(await usuarioPertenceAConta(id, req.userId, req.userPerfil))) {
@@ -123,11 +135,30 @@ exports.atualizar = async (req, res) => {
       emailFinal = current[0] ? current[0].email : (nome.toLowerCase().replace(/\s+/g, '.') + '@func.valida.local')
     }
 
+    // PIN é opcional na edição: só troca o hash se um PIN novo foi digitado.
+    // Se vier em branco, mantém o PIN atual (nunca "limpa" o PIN por engano).
+    let pinFinal
+    if (pin) {
+      pinFinal = await bcrypt.hash(pin, 10)
+    } else {
+      const atual = await query('SELECT pin FROM usuarios WHERE id = ?', [id])
+      pinFinal = atual[0]?.pin ?? null
+    }
+
+    // Celular é opcional: se não vier no corpo, mantém o que já estava salvo.
+    let celularFinal
+    if (celular !== undefined) {
+      celularFinal = normalizarCelular(celular)
+    } else {
+      const atual = await query('SELECT whatsapp FROM usuarios WHERE id = ?', [id])
+      celularFinal = atual[0]?.whatsapp ?? null
+    }
+
     await run(
-      `UPDATE usuarios SET nome = ?, email = ?, perfil = ?, loja_id = ?, pin = ?, 
-       tipo_comissao = ?, valor_tarefa_feita = ?, valor_desconto = ?, valor_mensal_fixo = ?, desconto_mensal = ?, periodo_comissao = ?, periodo_inicio = ?, periodo_fim = ? 
+      `UPDATE usuarios SET nome = ?, email = ?, perfil = ?, loja_id = ?, pin = ?, whatsapp = ?,
+       tipo_comissao = ?, valor_tarefa_feita = ?, valor_desconto = ?, valor_mensal_fixo = ?, desconto_mensal = ?, periodo_comissao = ?, periodo_inicio = ?, periodo_fim = ?
        WHERE id = ?`,
-      [nome, emailFinal, perfil, loja_id || null, pin || null, tipo_comissao || null, valor_tarefa_feita || 0, valor_desconto || 0, valor_mensal_fixo || 0, desconto_mensal || 0, periodo_comissao || 'mensal', periodo_inicio || null, periodo_fim || null, id]
+      [nome, emailFinal, perfil, loja_id || null, pinFinal, celularFinal, tipo_comissao || null, valor_tarefa_feita || 0, valor_desconto || 0, valor_mensal_fixo || 0, desconto_mensal || 0, periodo_comissao || 'mensal', periodo_inicio || null, periodo_fim || null, id]
     )
     res.json({ message: 'Usuário atualizado!' })
   } catch (erro) {

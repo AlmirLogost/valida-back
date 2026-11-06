@@ -35,6 +35,11 @@ const registroRoutes         = require('./src/routes/registroRoutes')
 const subscriptionRoutes     = require('./src/routes/subscriptionRoutes')
 
 const app = express()
+// O servidor roda atrás do Nginx (proxy reverso). Sem isso, o Express vê
+// todas as requisições chegando do IP interno do Nginx — qualquer coisa que
+// precise do IP real do visitante (limite de tentativas de login, logs)
+// trataria todo mundo como "o mesmo usuário".
+app.set('trust proxy', 1)
 app.use(helmet({ contentSecurityPolicy: false }))
 app.use(cors())
 app.use(express.json({ limit: '50mb' }))

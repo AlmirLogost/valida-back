@@ -1,61 +1,121 @@
+const bcrypt = require('bcrypt')
 const { query, run } = require('../config/database')
 const jwt = require('jsonwebtoken')
 
-// Login por nome + PIN
+// ============================================================================
+// Limite de tentativas no login por PIN: 5 erros seguidos bloqueiam por 15
+// minutos. PIN de 4 dígitos tem só 10.000 combinações — sem esse limite,
+// seria fácil de adivinhar na força bruta.
+//
+// A trava é por CELULAR (o que o atacante está tentando acertar), não por IP
+// — assim, mesmo trocando de IP, o mesmo celular continua bloqueado depois
+// de 5 erros. Guardado em memória (reinicia o contador se o servidor reiniciar,
+// o que é um risco aceitável aqui).
+// ============================================================================
+const MAX_TENTATIVAS = 5
+const BLOQUEIO_MS = 15 * 60 * 1000
+const tentativasPin = new Map() // celular normalizado -> { falhas, bloqueadoAte }
+
+function verificarBloqueio(chave) {
+  const estado = tentativasPin.get(chave)
+  if (estado?.bloqueadoAte && estado.bloqueadoAte > Date.now()) {
+    return Math.ceil((estado.bloqueadoAte - Date.now()) / 60000)
+  }
+  return null
+}
+
+function registrarFalha(chave) {
+  const estado = tentativasPin.get(chave) || { falhas: 0, bloqueadoAte: null }
+  estado.falhas += 1
+  if (estado.falhas >= MAX_TENTATIVAS) {
+    estado.bloqueadoAte = Date.now() + BLOQUEIO_MS
+  }
+  tentativasPin.set(chave, estado)
+}
+
+function limparTentativas(chave) {
+  tentativasPin.delete(chave)
+}
+
+function normalizarCelular(valor) {
+  const digitos = String(valor || '').replace(/\D/g, '')
+  return digitos || null
+}
+
+// Login por celular + PIN
 exports.loginPin = async (req, res) => {
   try {
-    const { nome, pin } = req.body
-    
-    if (!nome || !pin) {
-      return res.status(400).json({ erro: 'Informe nome e PIN' })
+    const { celular, pin } = req.body
+
+    if (!celular || !pin) {
+      return res.status(400).json({ erro: 'Informe celular e PIN' })
     }
-    
+
+    const chave = normalizarCelular(celular)
+    if (!chave) {
+      return res.status(400).json({ erro: 'Celular inválido' })
+    }
+
+    const minutosBloqueio = verificarBloqueio(chave)
+    if (minutosBloqueio !== null) {
+      return res.status(429).json({
+        erro: `Muitas tentativas com esse celular. Tente de novo em ${minutosBloqueio} minuto(s).`
+      })
+    }
+
     // Buscar perfis que usam PIN como método de login
     const perfisPin = await query(
       `SELECT nome FROM perfis WHERE metodo_login = 'pin' AND ativo = 1`
     )
     const slugsPin = perfisPin.map(p => p.nome)
-    
+
     // Fallback: se tabela perfis vazia, usar padrão
     const perfilFilter = slugsPin.length > 0
       ? `AND perfil IN (${slugsPin.map(() => '?').join(',')})`
       : `AND perfil IN ('operador', 'fiscal')`
-    
-    // Busca por nome (case insensitive)
+
+    // Busca por celular — o PIN só vale dentro da conta de quem cadastrou o
+    // celular; dois colaboradores de empresas diferentes podem ter o mesmo
+    // PIN sem conflito, porque o celular (normalmente único por pessoa) é
+    // que decide qual usuário (e qual conta) está entrando.
     const users = await query(
-      `SELECT * FROM usuarios 
-       WHERE LOWER(nome) = LOWER(?) AND ativo = 1 ${perfilFilter}`,
-      [nome.trim(), ...(slugsPin.length > 0 ? slugsPin : [])]
+      `SELECT * FROM usuarios
+       WHERE whatsapp = ? AND ativo = 1 ${perfilFilter}`,
+      [chave, ...(slugsPin.length > 0 ? slugsPin : [])]
     )
-    
+
     if (users.length === 0) {
-      return res.status(401).json({ erro: 'Usuário não encontrado' })
+      registrarFalha(chave)
+      return res.status(401).json({ erro: 'Celular não encontrado' })
     }
-    
-    // Se encontrou mais de um com mesmo nome, tenta match exato com PIN
+
+    // Se mais de um usuário tiver o mesmo celular (não deveria, mas por
+    // segurança), testa o PIN (hash) de cada um até achar o que bate.
     let user = null
     for (const u of users) {
-      if (u.pin === pin) {
+      if (u.pin && await bcrypt.compare(pin, u.pin)) {
         user = u
         break
       }
     }
-    
+
     if (!user) {
-      // Se nenhum bateu o PIN, verifica se o primeiro tem PIN configurado
+      registrarFalha(chave)
       if (!users[0].pin) {
         return res.status(401).json({ erro: 'PIN não configurado. Procure o administrador.' })
       }
       return res.status(401).json({ erro: 'PIN incorreto' })
     }
-    
+
+    limparTentativas(chave)
+
     // JWT_SECRET vem só do .env — o servidor nem inicia sem ela (ver server.js)
     const token = jwt.sign(
       { id: user.id, perfil: user.perfil },
       process.env.JWT_SECRET,
       { expiresIn: '30d' }
     )
-    
+
     // Buscar permissoes do perfil
     const perfilData = await query(
       'SELECT * FROM perfis WHERE nome = ? AND ativo = 1 LIMIT 1',
@@ -108,16 +168,19 @@ exports.alterarPin = async (req, res) => {
 
     const users = await query('SELECT pin FROM usuarios WHERE id = ?', [usuario_id])
     if (users.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' })
-    
-    if (users[0].pin && users[0].pin !== pin_atual) {
-      return res.status(401).json({ erro: 'PIN atual incorreto' })
+
+    const pinAtualHash = users[0].pin
+    if (pinAtualHash) {
+      const bate = await bcrypt.compare(pin_atual || '', pinAtualHash)
+      if (!bate) return res.status(401).json({ erro: 'PIN atual incorreto' })
     }
-    
+
     if (!/^\d{4}$/.test(pin_novo)) {
       return res.status(400).json({ erro: 'PIN deve ter 4 dígitos numéricos' })
     }
-    
-    await run('UPDATE usuarios SET pin = ? WHERE id = ?', [pin_novo, usuario_id])
+
+    const novoHash = await bcrypt.hash(pin_novo, 10)
+    await run('UPDATE usuarios SET pin = ? WHERE id = ?', [novoHash, usuario_id])
     res.json({ message: 'PIN atualizado!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
