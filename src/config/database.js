@@ -38,6 +38,39 @@ const run = async (sql, params = []) => {
   }
 }
 
+// Roda várias queries como uma única transação: se qualquer uma falhar,
+// tudo é desfeito (ROLLBACK) e nada fica gravado pela metade.
+// Uso: await withTransaction(async ({ query, run }) => { ... })
+const withTransaction = async (fn) => {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    const queryTx = async (sql, params = []) => {
+      const res = await client.query(convertPlaceholders(sql), params)
+      return res.rows
+    }
+    const runTx = async (sql, params = []) => {
+      let pgSql = convertPlaceholders(sql)
+      if (pgSql.trim().toUpperCase().startsWith('INSERT') &&
+          !pgSql.toUpperCase().includes('RETURNING')) {
+        pgSql = pgSql.trimEnd().replace(/;?\s*$/, '') + ' RETURNING id'
+      }
+      const res = await client.query(pgSql, params)
+      return { lastID: res.rows[0]?.id ?? null, changes: res.rowCount }
+    }
+
+    const resultado = await fn({ query: queryTx, run: runTx })
+    await client.query('COMMIT')
+    return resultado
+  } catch (erro) {
+    await client.query('ROLLBACK')
+    throw erro
+  } finally {
+    client.release()
+  }
+}
+
 const createTables = async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS lojas (
@@ -105,6 +138,7 @@ const createTables = async () => {
       loja_id INTEGER,
       ativo INTEGER DEFAULT 1,
       score INTEGER DEFAULT 0,
+      razao_social TEXT,
       pin TEXT,
       tipo_comissao TEXT,
       valor_tarefa_feita NUMERIC DEFAULT 0,
@@ -327,4 +361,4 @@ const migratePerfisPermissions = async () => {
   }
 }
 
-module.exports = { pool, query, run, createTables, createUsuarioChecklistsTable, migratePerfisPermissions }
+module.exports = { pool, query, run, withTransaction, createTables, createUsuarioChecklistsTable, migratePerfisPermissions }
