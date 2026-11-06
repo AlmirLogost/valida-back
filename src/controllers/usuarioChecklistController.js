@@ -1,4 +1,5 @@
 const { query, run } = require('../config/database')
+const { getLojaIds, lojaPertenceAConta } = require('../helpers/adminLojas')
 
 exports.listarChecklists = async (req, res) => {
   try {
@@ -113,14 +114,17 @@ exports.salvarOverrides = async (req, res) => {
 
 exports.listarTodos = async (req, res) => {
   try {
-    const { query } = require('../config/database')
+    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
     const vinculos = await query(`
-      SELECT uc.*, u.nome as usuario_nome, c.titulo as checklist_titulo
+      SELECT uc.*,
+        u.nome as usuario_nome,
+        c.titulo as checklist_titulo,
+        c.dias_semana, c.recorrencia, c.data_mensal, c.data_pontual, c.peso, c.loja_id as checklist_loja_id
       FROM usuario_checklists uc
       LEFT JOIN usuarios u ON uc.usuario_id = u.id
       LEFT JOIN checklists c ON uc.checklist_id = c.id
-      WHERE uc.ativo = 1
-    `)
+      WHERE uc.ativo = 1 AND c.loja_id = ANY(?)
+    `, [lojaIds])
     res.json(vinculos)
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -131,6 +135,10 @@ exports.listarTodos = async (req, res) => {
 exports.listarChecklistsLoja = async (req, res) => {
   try {
     const { loja_id } = req.params
+
+    if (!(await lojaPertenceAConta(loja_id, req.userId, req.userPerfil))) {
+      return res.status(403).json({ erro: 'Loja não encontrada ou não pertence à sua conta.' })
+    }
 
     const usuarios = await query(
       'SELECT id, nome, perfil FROM usuarios WHERE loja_id = ? AND ativo = 1 ORDER BY nome',

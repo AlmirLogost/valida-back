@@ -1,14 +1,6 @@
 const { query } = require('../config/database')
-
-// Resolve o admin_id independente do perfil do usuário logado
-async function getAdminId(userId, userPerfil) {
-  if (userPerfil === 'super_admin') return userId
-  const rows = await query(
-    'SELECT l.admin_id FROM usuarios u JOIN lojas l ON u.loja_id = l.id WHERE u.id = ? LIMIT 1',
-    [userId]
-  )
-  return rows[0]?.admin_id ?? null
-}
+// Resolução de conta única, compartilhada com o resto do sistema (helpers/adminLojas.js)
+const { getAdminId } = require('../helpers/adminLojas')
 
 // Busca subscription ativa + dados do plano
 async function getSubscription(adminId) {

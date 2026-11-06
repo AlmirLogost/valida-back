@@ -1,13 +1,24 @@
 const { query, run } = require('../config/database')
-const { lojaSubquery } = require('../helpers/adminLojas')
+const { getLojaIds, checklistPertenceAConta, lojaPertenceAConta } = require('../helpers/adminLojas')
+
+// Confere se uma execução (pela loja em que foi feita) pertence à conta do usuário logado
+async function execucaoPertenceAConta(execucaoId, userId, userPerfil) {
+  const rows = await query('SELECT loja_id FROM execucoes WHERE id = ?', [execucaoId])
+  if (!rows.length) return false
+  return lojaPertenceAConta(rows[0].loja_id, userId, userPerfil)
+}
 
 exports.iniciar = async (req, res) => {
   try {
     const { checklist_id } = req.body
-    
+
+    if (!(await checklistPertenceAConta(checklist_id, req.userId, req.userPerfil))) {
+      return res.status(403).json({ erro: 'Tarefa não encontrada ou não pertence à sua conta.' })
+    }
+
     const checklistItens = await query('SELECT * FROM checklist_itens WHERE checklist_id = ? ORDER BY ordem', [checklist_id])
     const totalItens = checklistItens.length
-    
+
     const checklist = await query('SELECT * FROM checklists WHERE id = ?', [checklist_id])
     if (!checklist[0]) return res.status(404).json({ erro: 'Checklist não encontrado' })
 
@@ -52,6 +63,10 @@ exports.iniciar = async (req, res) => {
 exports.responderItem = async (req, res) => {
   try {
     const { execucao_id, item_id, concluido, valor_resposta, observacao, evidencia_base64 } = req.body
+
+    if (!(await execucaoPertenceAConta(execucao_id, req.userId, req.userPerfil))) {
+      return res.status(403).json({ erro: 'Execução não encontrada ou não pertence à sua conta.' })
+    }
 
     // Tenta atualizar pelo checklist_item_id exato
     const upd = await run(
@@ -101,7 +116,11 @@ exports.concluir = async (req, res) => {
   try {
     const { id } = req.params
     const { score } = req.body
-    
+
+    if (!(await execucaoPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(403).json({ erro: 'Execução não encontrada ou não pertence à sua conta.' })
+    }
+
     // Buscar execução para pegar o checklist
     const execucaoRows = await query('SELECT e.*, c.evidencia_obrigatoria as cl_evid FROM execucoes e LEFT JOIN checklists c ON e.checklist_id = c.id WHERE e.id = ?', [id])
     if (!execucaoRows[0]) return res.status(404).json({ erro: 'Execução não encontrada' })
@@ -153,7 +172,11 @@ exports.concluir = async (req, res) => {
 exports.buscarExecucao = async (req, res) => {
   try {
     const { id } = req.params
-    
+
+    if (!(await execucaoPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(403).json({ erro: 'Execução não encontrada ou não pertence à sua conta.' })
+    }
+
     const execucao = await query(`
       SELECT e.*, c.titulo as checklist_titulo, c.categoria, c.momento,
              u.nome as usuario_nome, l.nome as loja_nome
@@ -201,12 +224,11 @@ exports.listar = async (req, res) => {
       LEFT JOIN lojas l ON e.loja_id = l.id
       WHERE 1=1
     `
-    // Super admin: filtra por lojas da conta
-    if (req.userPerfil === 'super_admin') {
-      sql += ` AND e.loja_id IN ${lojaSubquery(req.userId)}`
-    }
-    const params = []
-    
+    // Sempre restringe às lojas da conta de quem está logado (dono, gerente ou funcionário)
+    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+    sql += ' AND e.loja_id = ANY(?)'
+    const params = [lojaIds]
+
     if (loja_id) { sql += ' AND e.loja_id = ?'; params.push(loja_id) }
     if (req.query.usuario_id) { sql += ' AND e.usuario_id = ?'; params.push(req.query.usuario_id) }
     if (status) { sql += ' AND e.status = ?'; params.push(status) }
@@ -227,11 +249,10 @@ exports.dashboard = async (req, res) => {
     const { loja_id, data_inicio, data_fim, setor, usuario_id, momento } = req.query
     
     let where = 'WHERE 1=1'
-    if (req.userPerfil === 'super_admin') {
-      where += ` AND e.loja_id IN ${lojaSubquery(req.userId)}`
-    }
-    const params = []
-    
+    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+    where += ' AND e.loja_id = ANY(?)'
+    const params = [lojaIds]
+
     if (loja_id) { where += ' AND e.loja_id = ?'; params.push(loja_id) }
     if (data_inicio) { where += ' AND DATE(e.iniciado_em) >= ?'; params.push(data_inicio) }
     if (data_fim) { where += ' AND DATE(e.iniciado_em) <= ?'; params.push(data_fim) }

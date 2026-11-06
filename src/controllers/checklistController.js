@@ -1,22 +1,25 @@
 const { query, run } = require('../config/database')
-const { lojaSubquery } = require('../helpers/adminLojas')
+const { getLojaIds, checklistPertenceAConta } = require('../helpers/adminLojas')
 exports.listar = async (req, res) => {
   try {
+    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
     let sql = `
       SELECT c.*, u.nome as criador, l.nome as loja_nome
-      FROM checklists c 
-      LEFT JOIN usuarios u ON c.criado_por = u.id 
+      FROM checklists c
+      LEFT JOIN usuarios u ON c.criado_por = u.id
       LEFT JOIN lojas l ON c.loja_id = l.id
-      WHERE c.ativo = 1 AND c.loja_id IN ${lojaSubquery(req.userId)}
+      WHERE c.ativo = 1 AND c.loja_id = ANY(?)
     `
+    const params = [lojaIds]
     if (req.userPerfil !== 'super_admin') {
       const user = await query('SELECT loja_id FROM usuarios WHERE id = ?', [req.userId])
       if (user[0]?.loja_id) {
-        sql += ` AND c.loja_id = ${user[0].loja_id}`
+        sql += ' AND c.loja_id = ?'
+        params.push(user[0].loja_id)
       }
     }
     sql += ' ORDER BY c.criado_em DESC'
-    const checklists = await query(sql)
+    const checklists = await query(sql, params)
     res.json(checklists)
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -25,6 +28,10 @@ exports.listar = async (req, res) => {
 exports.criar = async (req, res) => {
   try {
     const b = req.body
+    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+    if (!b.loja_id || !lojaIds.includes(parseInt(b.loja_id))) {
+      return res.status(403).json({ erro: 'Loja inválida ou não pertence à sua conta.' })
+    }
     const result = await run(
       `INSERT INTO checklists (titulo, descricao, categoria, loja_id, criado_por, 
        horario_inicio, horario_fim, recorrencia, data_mensal, data_pontual, dias_semana, momento,
@@ -49,8 +56,17 @@ exports.atualizar = async (req, res) => {
   try {
     const { id } = req.params
     const b = req.body
+    if (!(await checklistPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(403).json({ erro: 'Tarefa não encontrada ou não pertence à sua conta.' })
+    }
+    if (b.loja_id) {
+      const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+      if (!lojaIds.includes(parseInt(b.loja_id))) {
+        return res.status(403).json({ erro: 'Loja inválida ou não pertence à sua conta.' })
+      }
+    }
     await run(
-      `UPDATE checklists SET titulo=?, descricao=?, categoria=?, loja_id=?, 
+      `UPDATE checklists SET titulo=?, descricao=?, categoria=?, loja_id=?,
        horario_inicio=?, horario_fim=?, recorrencia=?, data_mensal=?, data_pontual=?, dias_semana=?, momento=?,
        tipo_campo=?, evidencia_obrigatoria=?, tipo_evidencia=?, critico=?,
        subtipo_numerico=?, peso=?, rotulo_positivo=?, rotulo_negativo=?,
@@ -71,6 +87,9 @@ exports.atualizar = async (req, res) => {
 exports.deletar = async (req, res) => {
   try {
     const { id } = req.params
+    if (!(await checklistPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(403).json({ erro: 'Tarefa não encontrada ou não pertence à sua conta.' })
+    }
     await run('UPDATE checklists SET ativo = 0 WHERE id = ?', [id])
     res.json({ message: 'Checklist desativado!' })
   } catch (erro) {
@@ -80,6 +99,9 @@ exports.deletar = async (req, res) => {
 exports.toggleStatus = async (req, res) => {
   try {
     const { id } = req.params
+    if (!(await checklistPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(403).json({ erro: 'Tarefa não encontrada ou não pertence à sua conta.' })
+    }
     const checklist = await query('SELECT ativo FROM checklists WHERE id = ?', [id])
     const novoStatus = checklist[0].ativo ? 0 : 1
     await run('UPDATE checklists SET ativo = ? WHERE id = ?', [novoStatus, id])
@@ -92,6 +114,9 @@ exports.togglePausado = async (req, res) => {
   try {
     const { id } = req.params
     const { tipo, ate } = req.body || {}
+    if (!(await checklistPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(403).json({ erro: 'Tarefa não encontrada ou não pertence à sua conta.' })
+    }
 
     // Migrations seguras: adiciona colunas se não existirem
     await run(`ALTER TABLE checklists ADD COLUMN pausado BOOLEAN DEFAULT 0`).catch(() => {})

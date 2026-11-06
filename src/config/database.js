@@ -51,6 +51,7 @@ const createTables = async () => {
       aberta INTEGER DEFAULT 1,
       hora_reset TEXT,
       ativo INTEGER DEFAULT 1,
+      admin_id INTEGER,
       criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `)
@@ -128,6 +129,7 @@ const createTables = async () => {
       horario_fim TEXT,
       recorrencia TEXT DEFAULT 'diario',
       data_mensal TEXT,
+      data_pontual TEXT,
       dias_semana TEXT,
       momento TEXT DEFAULT 'outros',
       tipo_campo TEXT DEFAULT 'boolean',

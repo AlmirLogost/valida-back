@@ -1,7 +1,11 @@
 const { query, run } = require('../config/database')
+const { getAdminId } = require('../helpers/adminLojas')
 
 exports.status = async (req, res) => {
   try {
+    const adminId = await getAdminId(req.userId, req.userPerfil)
+    if (!adminId) return res.status(404).json({ erro: 'Sem assinatura.' })
+
     const rows = await query(
       `SELECT s.*, p.nome AS plano_nome, p.slug AS plano_slug, p.preco,
               p.max_lojas, p.max_usuarios, p.max_tarefas_ativas, p.tem_comissoes
@@ -10,7 +14,7 @@ exports.status = async (req, res) => {
        WHERE s.admin_id = ?
        ORDER BY s.id DESC
        LIMIT 1`,
-      [req.userId]
+      [adminId]
     )
 
     if (!rows.length) return res.status(404).json({ erro: 'Sem assinatura.' })
@@ -24,16 +28,16 @@ exports.status = async (req, res) => {
     }
 
     const [[lojas], [usuarios], [tarefas]] = await Promise.all([
-      query('SELECT COUNT(*) AS total FROM lojas WHERE admin_id = ? AND ativo >= 0', [req.userId]),
+      query('SELECT COUNT(*) AS total FROM lojas WHERE admin_id = ? AND ativo >= 0', [adminId]),
       query(
         `SELECT COUNT(*) AS total FROM usuarios
          WHERE loja_id IN (SELECT id FROM lojas WHERE admin_id = ?) AND ativo = 1`,
-        [req.userId]
+        [adminId]
       ),
       query(
         `SELECT COUNT(*) AS total FROM checklists
          WHERE loja_id IN (SELECT id FROM lojas WHERE admin_id = ?) AND ativo = 1`,
-        [req.userId]
+        [adminId]
       )
     ])
 
