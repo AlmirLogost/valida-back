@@ -37,12 +37,22 @@ exports.criar = async (req, res) => {
       return res.status(400).json({ erro: 'Nome do cargo e obrigatorio' })
     }
 
+    if (loja_id) {
+      const { lojaPertenceAConta } = require('../helpers/adminLojas')
+      if (!(await lojaPertenceAConta(loja_id, req.userId, req.userPerfil))) {
+        return res.status(404).json({ erro: 'Loja não encontrada' })
+      }
+    }
+
     const slug = (nome || rotulo).toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
 
-    const existente = await query(
-      'SELECT id, nome FROM perfis WHERE nome = ? AND (loja_id = ? OR (loja_id IS NULL AND ? IS NULL)) AND ativo = 1',
-      [slug, loja_id || null, loja_id || null]
-    )
+    // Duas queries em vez de uma condição "? IS NULL": quando o parâmetro só
+    // aparece nesse teste, o Postgres não consegue inferir o tipo dele
+    // ("could not determine data type of parameter") e a query falhava toda
+    // vez que loja_id vinha preenchido (o caso mais comum).
+    const existente = loja_id
+      ? await query('SELECT id, nome FROM perfis WHERE nome = ? AND loja_id = ? AND ativo = 1', [slug, loja_id])
+      : await query('SELECT id, nome FROM perfis WHERE nome = ? AND loja_id IS NULL AND ativo = 1', [slug])
     if (existente.length > 0) {
       // Já existe — retorna o existente em vez de erro
       return res.json({ id: existente[0].id, nome: existente[0].nome, message: 'Cargo já existia' })

@@ -343,6 +343,9 @@ exports.dashboard = async (req, res) => {
 exports.reverter = async (req, res) => {
   try {
     const { id } = req.params
+    if (!(await execucaoPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Execução não encontrada' })
+    }
     await run('DELETE FROM execucoes_itens WHERE execucao_id = ?', [id])
     await run('DELETE FROM execucoes WHERE id = ?', [id])
     res.json({ ok: true })

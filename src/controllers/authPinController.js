@@ -97,11 +97,15 @@ exports.loginPin = async (req, res) => {
   }
 }
 
-// Alterar PIN (protegida)
+// Alterar o PRÓPRIO PIN (protegida). Nunca aceita usuario_id do corpo da
+// requisição — isso permitia trocar o PIN de qualquer usuário de qualquer
+// conta, bastando acertar o PIN atual dele. Só o próprio usuário logado
+// pode trocar o próprio PIN por aqui.
 exports.alterarPin = async (req, res) => {
   try {
-    const { usuario_id, pin_atual, pin_novo } = req.body
-    
+    const { pin_atual, pin_novo } = req.body
+    const usuario_id = req.userId
+
     const users = await query('SELECT pin FROM usuarios WHERE id = ?', [usuario_id])
     if (users.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' })
     

@@ -123,7 +123,7 @@ async function main() {
     const donoB = await run(`INSERT INTO usuarios (nome, email, senha, perfil) VALUES (?, ?, ?, 'super_admin')`,
       [`${PREFIXO}Dono B`, `${PREFIXO}donob@teste.local`, hash])
     const lojaB = await run('INSERT INTO lojas (nome, admin_id) VALUES (?, ?)', [`${PREFIXO}Loja B`, donoB.lastID])
-    const funcB = await run(`INSERT INTO usuarios (nome, email, senha, perfil, loja_id) VALUES (?, ?, ?, 'operador', ?)`,
+    const funcB = await run(`INSERT INTO usuarios (nome, email, senha, perfil, loja_id, pin) VALUES (?, ?, ?, 'operador', ?, '1234')`,
       [`${PREFIXO}Func B`, `${PREFIXO}funcb@teste.local`, hash, lojaB.lastID])
     const checkB = await run(`INSERT INTO checklists (titulo, loja_id, criado_por, recorrencia) VALUES (?, ?, ?, 'diario')`,
       [`${PREFIXO}Tarefa B`, lojaB.lastID, donoB.lastID])
@@ -182,6 +182,10 @@ async function main() {
     esperarStatus('A NÃO edita o cargo customizado da conta B', await chamar('PUT', `/perfis/${perfilB.lastID}`, tokenA, { rotulo: 'Hackeado' }), 404)
     esperarStatus('A NÃO apaga o cargo customizado da conta B', await chamar('DELETE', `/perfis/${perfilB.lastID}`, tokenA), 404)
 
+    console.log('-- perfis: criar com loja de outra conta (auditoria pré-1.4) --')
+    esperarStatus('A NÃO cria cargo vinculado à Loja B', await chamar('POST', '/perfis', tokenA, { rotulo: `${PREFIXO}Cargo invasor`, loja_id: lojaB.lastID }), 404)
+    esperarStatus('A cria cargo vinculado à própria Loja A', await chamar('POST', '/perfis', tokenA, { rotulo: `${PREFIXO}Cargo A`, loja_id: lojaA.lastID }), 200)
+
     console.log('-- usuario-checklists: listarChecklists / listarDisponiveis (1.1c, item 1) --')
     esperarStatus('A NÃO lê os checklists do Func B', await chamar('GET', `/usuarios/${funcB.lastID}/checklists`, tokenA), 404)
     esperarStatus('A NÃO lê os checklists disponíveis do Func B', await chamar('GET', `/usuarios/${funcB.lastID}/checklists-disponiveis`, tokenA), 404)
@@ -205,6 +209,13 @@ async function main() {
     esperarStatus('A NÃO apaga o Func B', await chamar('DELETE', `/usuarios/${funcB.lastID}`, tokenA), 404)
     esperarStatus('A NÃO lê a execução da conta B', await chamar('GET', `/execucoes/${execB.lastID}`, tokenA), 404)
     esperarStatus('A NÃO conclui a execução da conta B', await chamar('PUT', `/execucoes/${execB.lastID}/concluir`, tokenA, { score: 10 }), 404)
+    esperarStatus('A NÃO reverte (apaga) a execução da conta B', await chamar('DELETE', `/execucoes/${execB.lastID}/reverter`, tokenA), 404)
+
+    console.log('-- login-pin/alterar: só o próprio usuário (auditoria pré-1.4) --')
+    // Dono A tenta, usando o próprio token, trocar o PIN informando o usuario_id
+    // do Func B (de outra conta) — a rota deve ignorar esse usuario_id do body
+    // e nunca tocar no PIN do Func B.
+    await chamar('PUT', '/login-pin/alterar', tokenA, { usuario_id: funcB.lastID, pin_atual: '1234', pin_novo: '9999' })
 
     console.log('\n-- confirma que nada da conta B foi alterado --')
     const lojaBAinda = await query('SELECT ativo FROM lojas WHERE id = ?', [lojaB.lastID])
@@ -216,8 +227,12 @@ async function main() {
     else falhou('Tarefa B continua ativa (não foi apagada)', JSON.stringify(checkBAinda[0]))
 
     const execBAinda = await query('SELECT status FROM execucoes WHERE id = ?', [execB.lastID])
-    if (execBAinda[0]?.status === 'em_andamento') ok('Execução B continua em andamento (não foi concluída)')
-    else falhou('Execução B continua em andamento (não foi concluída)', JSON.stringify(execBAinda[0]))
+    if (execBAinda[0]?.status === 'em_andamento') ok('Execução B continua em andamento (não foi concluída nem revertida/apagada)')
+    else falhou('Execução B continua em andamento (não foi concluída nem revertida/apagada)', JSON.stringify(execBAinda[0]))
+
+    const funcBPinAinda = await query('SELECT pin FROM usuarios WHERE id = ?', [funcB.lastID])
+    if (funcBPinAinda[0]?.pin === '1234') ok('PIN do Func B continua o mesmo (dono A não conseguiu trocar)')
+    else falhou('PIN do Func B continua o mesmo (dono A não conseguiu trocar)', JSON.stringify(funcBPinAinda[0]))
 
     const perfilBAinda = await query('SELECT ativo, rotulo FROM perfis WHERE id = ?', [perfilB.lastID])
     if (perfilBAinda[0]?.ativo === 1 && perfilBAinda[0]?.rotulo === `${PREFIXO}Cargo B`) ok('Cargo B continua ativo e sem alteração')
