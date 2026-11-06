@@ -178,6 +178,11 @@ async function main() {
     if (perfisA.status === 200 && !perfisA.body.some(p => p.id === perfilB.lastID)) ok('A NÃO vê o cargo customizado da conta B na lista de perfis')
     else falhou('A NÃO vê o cargo customizado da conta B na lista de perfis', `cargo B apareceu! status ${perfisA.status}`)
 
+    console.log('-- usuario-checklists: listarChecklists / listarDisponiveis (1.1c, item 1) --')
+    esperarStatus('A NÃO lê os checklists do Func B', await chamar('GET', `/usuarios/${funcB.lastID}/checklists`, tokenA), 404)
+    esperarStatus('A NÃO lê os checklists disponíveis do Func B', await chamar('GET', `/usuarios/${funcB.lastID}/checklists-disponiveis`, tokenA), 404)
+    esperarStatus('A lê os checklists do próprio Func A', await chamar('GET', `/usuarios/${funcA.lastID}/checklists`, tokenA), 200)
+
     console.log('-- usuario-checklists (vincular / mover / desvincular / overrides) --')
     esperarStatus('A NÃO vincula o Func B à Tarefa B', await chamar('POST', '/usuario-checklists', tokenA, { usuario_id: funcB.lastID, checklist_id: checkB.lastID }), 404)
     esperarStatus('A NÃO move tarefa para o Func B', await chamar('POST', '/usuario-checklists/mover', tokenA, { from_usuario_id: funcA.lastID, to_usuario_id: funcB.lastID, checklist_id: checkA.lastID }), 404)

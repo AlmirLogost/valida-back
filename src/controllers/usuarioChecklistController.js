@@ -4,7 +4,11 @@ const { getLojaIds, lojaPertenceAConta, checklistPertenceAConta, usuarioPertence
 exports.listarChecklists = async (req, res) => {
   try {
     const { usuario_id } = req.params
-    
+
+    if (!(await usuarioPertenceAConta(usuario_id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Usuário não encontrado' })
+    }
+
     const vinculados = await query(`
       SELECT c.*, uc.id as vinculo_id, uc.bonus_override, uc.desconto_override
       FROM checklists c
@@ -21,11 +25,15 @@ exports.listarChecklists = async (req, res) => {
 exports.listarDisponiveis = async (req, res) => {
   try {
     const { usuario_id } = req.params
-    
+
+    if (!(await usuarioPertenceAConta(usuario_id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Usuário não encontrado' })
+    }
+
     // Busca usuário e sua loja
     const user = await query('SELECT loja_id FROM usuarios WHERE id = ?', [usuario_id])
     if (!user[0]) return res.json([])
-    
+
     const lojaId = user[0].loja_id
     
     // Checklists da loja que NÃO estão vinculados ao usuário
