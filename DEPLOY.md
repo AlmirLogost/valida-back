@@ -147,14 +147,55 @@ volte ao passo 1.
 ## 8. Testar na prática
 
 - Abra o site no navegador, faça login como dono normalmente.
-- Teste o login de um funcionário que **já existia antes** (celular + PIN que
-  ele já usava) — deve continuar funcionando normalmente.
+- Teste o login de um funcionário que **já existia antes** (o colaborador
+  digita o **nome dele**, exatamente como já fazia, + o PIN de sempre) — isso
+  continua funcionando pelo fallback explicado no passo 9, mesmo que ele ainda
+  não tenha celular cadastrado.
 - Crie um colaborador novo de teste (celular + PIN) e confirme que ele consegue
-  entrar numa aba anônima.
-- Erre o PIN 5 vezes de propósito com um celular de teste — a 6ª tentativa deve
-  dizer "Muitas tentativas..." mesmo acertando o PIN.
+  entrar numa aba anônima **usando o celular**.
+- Erre o PIN 5 vezes de propósito (celular ou nome) — a 6ª tentativa deve dizer
+  "Muitas tentativas..." mesmo acertando o PIN.
 
 Se tudo isso funcionar, o deploy foi bem-sucedido.
+
+---
+
+## 9. Depois do deploy: completar os celulares e desligar o fallback por nome
+
+Os colaboradores que já existiam antes da 1.4 (hoje, uns 20) não têm celular
+cadastrado. Pra eles não ficarem impedidos de entrar no dia do deploy, existe
+um fallback temporário: **enquanto alguém não tiver celular cadastrado, continua
+entrando pelo nome** (exatamente como sempre fez), em vez de pelo celular.
+
+Isso é temporário e tem um limite de segurança: se dois colaboradores sem
+celular (em contas diferentes, por exemplo) tiverem o mesmo nome, o login por
+nome é **recusado** pros dois — ninguém entra na conta errada, mas também
+ninguém com nome duplicado consegue usar o fallback. Essas pessoas precisam do
+celular cadastrado o quanto antes.
+
+**O que fazer:**
+
+1. Abra a tela **Equipe** logado como dono. Se aparecer o aviso amarelo
+   "N colaborador(es) sem celular cadastrado", edite cada um (botão de editar
+   colaborador) e preencha o campo Celular. O aviso lista os nomes e some
+   sozinho quando não faltar mais ninguém.
+2. Depois que TODOS tiverem celular cadastrado (aviso sumiu da tela Equipe),
+   desligue o fallback — ele não é mais necessário e reduz a superfície de
+   ataque (volta a exigir celular pra todo mundo, sem exceção):
+   ```bash
+   # No .env do servidor, adicione ou altere a linha:
+   LOGIN_POR_NOME=false
+   ```
+   E reinicie o back:
+   ```bash
+   pm2 restart <nome-do-processo>
+   ```
+3. Confirme que o login por nome (sem celular) passa a ser recusado e que
+   todo mundo com celular cadastrado continua entrando normalmente.
+
+Não tem pressa de fazer isso no mesmo dia do deploy — o fallback é seguro de
+deixar ligado por alguns dias enquanto os celulares vão sendo completados. O
+importante é não deixar ligado indefinidamente.
 
 ---
 

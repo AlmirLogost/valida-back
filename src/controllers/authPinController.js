@@ -7,14 +7,15 @@ const jwt = require('jsonwebtoken')
 // minutos. PIN de 4 dígitos tem só 10.000 combinações — sem esse limite,
 // seria fácil de adivinhar na força bruta.
 //
-// A trava é por CELULAR (o que o atacante está tentando acertar), não por IP
-// — assim, mesmo trocando de IP, o mesmo celular continua bloqueado depois
-// de 5 erros. Guardado em memória (reinicia o contador se o servidor reiniciar,
-// o que é um risco aceitável aqui).
+// A trava é pelo TEXTO DIGITADO no campo celular (celular ou, no fallback,
+// o nome) — assim, mesmo trocando de IP, a mesma tentativa continua
+// bloqueada depois de 5 erros. Guardado em memória (reinicia o contador se
+// o servidor reiniciar, risco aceitável aqui). Vale tanto pro login normal
+// quanto pro fallback por nome (ponto 3 da 1.4).
 // ============================================================================
 const MAX_TENTATIVAS = 5
 const BLOQUEIO_MS = 15 * 60 * 1000
-const tentativasPin = new Map() // celular normalizado -> { falhas, bloqueadoAte }
+const tentativasPin = new Map() // texto digitado (normalizado) -> { falhas, bloqueadoAte }
 
 function verificarBloqueio(chave) {
   const estado = tentativasPin.get(chave)
@@ -42,7 +43,28 @@ function normalizarCelular(valor) {
   return digitos || null
 }
 
-// Login por celular + PIN
+// LOGIN_POR_NOME: liga/desliga o fallback de login por nome (ponto 3 da 1.4).
+// Ligado por padrão enquanto colaboradores antigos (sem celular cadastrado)
+// ainda existem em produção — ver back/DEPLOY.md. Só "false" desliga.
+function loginPorNomeHabilitado() {
+  return process.env.LOGIN_POR_NOME !== 'false'
+}
+
+// Compara o PIN digitado com o que está salvo, aceitando os dois formatos:
+// hash bcrypt (o normal, a partir da 1.4) ou texto puro (colaborador antigo
+// cujo PIN ainda não passou por scripts/migrar_pins_para_hash.js). Isso
+// garante que o fallback por nome funciona mesmo que a migração de dados
+// ainda não tenha rodado nesse colaborador específico.
+async function pinCorresponde(pinDigitado, pinArmazenado) {
+  if (!pinArmazenado) return false
+  if (pinArmazenado.startsWith('$2')) {
+    return bcrypt.compare(pinDigitado, pinArmazenado)
+  }
+  return pinArmazenado === pinDigitado
+}
+
+// Login por celular + PIN (com fallback por nome pra quem ainda não tem
+// celular cadastrado — ver LOGIN_POR_NOME acima e back/DEPLOY.md)
 exports.loginPin = async (req, res) => {
   try {
     const { celular, pin } = req.body
@@ -51,15 +73,16 @@ exports.loginPin = async (req, res) => {
       return res.status(400).json({ erro: 'Informe celular e PIN' })
     }
 
-    const chave = normalizarCelular(celular)
-    if (!chave) {
-      return res.status(400).json({ erro: 'Celular inválido' })
-    }
+    const textoDigitado = String(celular).trim()
+    const celularNormalizado = normalizarCelular(textoDigitado)
+    // Chave do limite de tentativas: o texto como foi digitado (minúsculo),
+    // serve tanto pra celular quanto pra nome no fallback.
+    const chaveTentativa = textoDigitado.toLowerCase()
 
-    const minutosBloqueio = verificarBloqueio(chave)
+    const minutosBloqueio = verificarBloqueio(chaveTentativa)
     if (minutosBloqueio !== null) {
       return res.status(429).json({
-        erro: `Muitas tentativas com esse celular. Tente de novo em ${minutosBloqueio} minuto(s).`
+        erro: `Muitas tentativas. Tente de novo em ${minutosBloqueio} minuto(s).`
       })
     }
 
@@ -73,88 +96,122 @@ exports.loginPin = async (req, res) => {
     const perfilFilter = slugsPin.length > 0
       ? `AND perfil IN (${slugsPin.map(() => '?').join(',')})`
       : `AND perfil IN ('operador', 'fiscal')`
+    const perfilParams = slugsPin.length > 0 ? slugsPin : []
 
-    // Busca por celular — o PIN só vale dentro da conta de quem cadastrou o
-    // celular; dois colaboradores de empresas diferentes podem ter o mesmo
+    // 1) Busca por celular — o PIN só vale dentro da conta de quem cadastrou
+    // o celular; dois colaboradores de empresas diferentes podem ter o mesmo
     // PIN sem conflito, porque o celular (normalmente único por pessoa) é
     // que decide qual usuário (e qual conta) está entrando.
-    const users = await query(
-      `SELECT * FROM usuarios
-       WHERE whatsapp = ? AND ativo = 1 ${perfilFilter}`,
-      [chave, ...(slugsPin.length > 0 ? slugsPin : [])]
-    )
+    if (celularNormalizado) {
+      const usersCelular = await query(
+        `SELECT * FROM usuarios WHERE whatsapp = ? AND ativo = 1 ${perfilFilter}`,
+        [celularNormalizado, ...perfilParams]
+      )
 
-    if (users.length === 0) {
-      registrarFalha(chave)
-      return res.status(401).json({ erro: 'Celular não encontrado' })
-    }
-
-    // Se mais de um usuário tiver o mesmo celular (não deveria, mas por
-    // segurança), testa o PIN (hash) de cada um até achar o que bate.
-    let user = null
-    for (const u of users) {
-      if (u.pin && await bcrypt.compare(pin, u.pin)) {
-        user = u
-        break
+      if (usersCelular.length > 0) {
+        let encontrado = null
+        for (const u of usersCelular) {
+          if (await pinCorresponde(pin, u.pin)) { encontrado = u; break }
+        }
+        if (encontrado) {
+          limparTentativas(chaveTentativa)
+          return responderLogin(res, encontrado)
+        }
+        registrarFalha(chaveTentativa)
+        if (!usersCelular[0].pin) {
+          return res.status(401).json({ erro: 'PIN não configurado. Procure o administrador.' })
+        }
+        return res.status(401).json({ erro: 'PIN incorreto' })
       }
     }
 
-    if (!user) {
-      registrarFalha(chave)
-      if (!users[0].pin) {
-        return res.status(401).json({ erro: 'PIN não configurado. Procure o administrador.' })
+    // 2) Fallback por nome — só pra quem ainda NÃO tem celular cadastrado.
+    // Assim que o dono preenche o celular de alguém, essa pessoa some desta
+    // busca e passa a usar só o celular, igual todo mundo novo.
+    if (loginPorNomeHabilitado()) {
+      const usersNome = await query(
+        `SELECT * FROM usuarios WHERE LOWER(nome) = LOWER(?) AND whatsapp IS NULL AND ativo = 1 ${perfilFilter}`,
+        [textoDigitado, ...perfilParams]
+      )
+
+      if (usersNome.length > 1) {
+        // Mais de um colaborador sem celular com esse nome (em qualquer
+        // conta) — nunca adivinha qual é. Recusa sem nem olhar o PIN.
+        registrarFalha(chaveTentativa)
+        return res.status(401).json({
+          erro: 'Encontramos mais de um colaborador com esse nome. Peça pro dono cadastrar seu celular pra você conseguir entrar.'
+        })
       }
-      return res.status(401).json({ erro: 'PIN incorreto' })
+
+      if (usersNome.length === 1) {
+        const u = usersNome[0]
+        if (await pinCorresponde(pin, u.pin)) {
+          limparTentativas(chaveTentativa)
+          // Log sem dado sensível (nunca PIN/senha) — ajuda o dono a saber
+          // quem ainda está entrando pelo nome em vez do celular.
+          console.log(`[login-pin] login via fallback de nome (sem celular cadastrado) — usuario_id=${u.id} em ${new Date().toISOString()}`)
+          return responderLogin(res, u)
+        }
+        registrarFalha(chaveTentativa)
+        if (!u.pin) {
+          return res.status(401).json({ erro: 'PIN não configurado. Procure o administrador.' })
+        }
+        return res.status(401).json({ erro: 'PIN incorreto' })
+      }
     }
 
-    limparTentativas(chave)
-
-    // JWT_SECRET vem só do .env — o servidor nem inicia sem ela (ver server.js)
-    const token = jwt.sign(
-      { id: user.id, perfil: user.perfil },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    )
-
-    // Buscar permissoes do perfil
-    const perfilData = await query(
-      'SELECT * FROM perfis WHERE nome = ? AND ativo = 1 LIMIT 1',
-      [user.perfil]
-    )
-    const permissoes = perfilData.length > 0 ? {
-      perm_dashboard: !!perfilData[0].perm_dashboard,
-      perm_criar_tarefas: !!perfilData[0].perm_criar_tarefas,
-      perm_executar_tarefas: !!perfilData[0].perm_executar_tarefas,
-      perm_conferir: !!perfilData[0].perm_conferir,
-      perm_gerenciar_equipe: !!perfilData[0].perm_gerenciar_equipe,
-      perm_gerenciar_lojas: !!perfilData[0].perm_gerenciar_lojas,
-      perm_relatorios: !!perfilData[0].perm_relatorios,
-      perm_configuracoes: !!perfilData[0].perm_configuracoes
-    } : null
-
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        nome: user.nome,
-        email: user.email,
-        perfil: user.perfil,
-        loja_id: user.loja_id,
-        tipo_comissao: user.tipo_comissao,
-        valor_tarefa_feita: user.valor_tarefa_feita,
-        valor_desconto: user.valor_desconto,
-        valor_mensal_fixo: user.valor_mensal_fixo,
-        desconto_mensal: user.desconto_mensal,
-        periodo_comissao: user.periodo_comissao || 'mensal',
-        periodo_inicio: user.periodo_inicio || null,
-        periodo_fim: user.periodo_fim || null,
-        rotulo_perfil: perfilData.length > 0 ? perfilData[0].rotulo : user.perfil,
-        permissoes
-      }
-    })
+    // 3) Nada encontrado nem por celular nem (se habilitado) por nome
+    registrarFalha(chaveTentativa)
+    return res.status(401).json({ erro: 'Celular não encontrado' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
   }
+}
+
+async function responderLogin(res, user) {
+  // JWT_SECRET vem só do .env — o servidor nem inicia sem ela (ver server.js)
+  const token = jwt.sign(
+    { id: user.id, perfil: user.perfil },
+    process.env.JWT_SECRET,
+    { expiresIn: '30d' }
+  )
+
+  // Buscar permissoes do perfil
+  const perfilData = await query(
+    'SELECT * FROM perfis WHERE nome = ? AND ativo = 1 LIMIT 1',
+    [user.perfil]
+  )
+  const permissoes = perfilData.length > 0 ? {
+    perm_dashboard: !!perfilData[0].perm_dashboard,
+    perm_criar_tarefas: !!perfilData[0].perm_criar_tarefas,
+    perm_executar_tarefas: !!perfilData[0].perm_executar_tarefas,
+    perm_conferir: !!perfilData[0].perm_conferir,
+    perm_gerenciar_equipe: !!perfilData[0].perm_gerenciar_equipe,
+    perm_gerenciar_lojas: !!perfilData[0].perm_gerenciar_lojas,
+    perm_relatorios: !!perfilData[0].perm_relatorios,
+    perm_configuracoes: !!perfilData[0].perm_configuracoes
+  } : null
+
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      nome: user.nome,
+      email: user.email,
+      perfil: user.perfil,
+      loja_id: user.loja_id,
+      tipo_comissao: user.tipo_comissao,
+      valor_tarefa_feita: user.valor_tarefa_feita,
+      valor_desconto: user.valor_desconto,
+      valor_mensal_fixo: user.valor_mensal_fixo,
+      desconto_mensal: user.desconto_mensal,
+      periodo_comissao: user.periodo_comissao || 'mensal',
+      periodo_inicio: user.periodo_inicio || null,
+      periodo_fim: user.periodo_fim || null,
+      rotulo_perfil: perfilData.length > 0 ? perfilData[0].rotulo : user.perfil,
+      permissoes
+    }
+  })
 }
 
 // Alterar o PRÓPRIO PIN (protegida). Nunca aceita usuario_id do corpo da
@@ -169,9 +226,9 @@ exports.alterarPin = async (req, res) => {
     const users = await query('SELECT pin FROM usuarios WHERE id = ?', [usuario_id])
     if (users.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' })
 
-    const pinAtualHash = users[0].pin
-    if (pinAtualHash) {
-      const bate = await bcrypt.compare(pin_atual || '', pinAtualHash)
+    const pinAtualSalvo = users[0].pin
+    if (pinAtualSalvo) {
+      const bate = await pinCorresponde(pin_atual || '', pinAtualSalvo)
       if (!bate) return res.status(401).json({ erro: 'PIN atual incorreto' })
     }
 
