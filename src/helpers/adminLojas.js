@@ -56,10 +56,36 @@ async function usuarioPertenceAConta(usuarioAlvoId, userId, userPerfil) {
   return lojaPertenceAConta(rows[0].loja_id, userId, userPerfil)
 }
 
+// Confere se um item (sub-tarefa) de um checklist pertence à conta do usuário logado.
+async function checklistItemPertenceAConta(itemId, userId, userPerfil) {
+  const rows = await query('SELECT checklist_id FROM checklist_itens WHERE id = ?', [itemId])
+  if (!rows.length) return false
+  return checklistPertenceAConta(rows[0].checklist_id, userId, userPerfil)
+}
+
+// Confere se um vínculo usuário<->checklist (usuario_checklists) pertence à
+// conta do usuário logado — olhando o checklist do vínculo, que é a fonte
+// de verdade de a qual loja/conta ele pertence.
+async function vinculoPertenceAConta(vinculoId, userId, userPerfil) {
+  const rows = await query('SELECT checklist_id FROM usuario_checklists WHERE id = ?', [vinculoId])
+  if (!rows.length) return false
+  return checklistPertenceAConta(rows[0].checklist_id, userId, userPerfil)
+}
+
+// Confere se uma data registrada (checklist_datas) pertence à conta do usuário logado.
+async function checklistDataPertenceAConta(dataId, userId, userPerfil) {
+  const rows = await query('SELECT checklist_id FROM checklist_datas WHERE id = ?', [dataId])
+  if (!rows.length) return false
+  return checklistPertenceAConta(rows[0].checklist_id, userId, userPerfil)
+}
+
 module.exports = {
   getAdminId,
   getLojaIds,
   lojaPertenceAConta,
   checklistPertenceAConta,
-  usuarioPertenceAConta
+  usuarioPertenceAConta,
+  checklistItemPertenceAConta,
+  vinculoPertenceAConta,
+  checklistDataPertenceAConta
 }

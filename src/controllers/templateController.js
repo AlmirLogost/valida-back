@@ -78,6 +78,10 @@ exports.deletar = async (req, res) => {
 exports.aplicar = async (req, res) => {
   try {
     const { template_id, loja_id } = req.body
+    const { lojaPertenceAConta } = require('../helpers/adminLojas')
+    if (!(await lojaPertenceAConta(loja_id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Loja não encontrada' })
+    }
     const t = await query('SELECT * FROM templates WHERE id = ?', [template_id])
     if (!t[0]) return res.status(404).json({ erro: 'Template não encontrado' })
     const itens = await query('SELECT * FROM template_itens WHERE template_id = ? ORDER BY ordem', [template_id])

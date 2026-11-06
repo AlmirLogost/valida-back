@@ -1,5 +1,5 @@
 const { query, run } = require('../config/database')
-const { getLojaIds, lojaPertenceAConta } = require('../helpers/adminLojas')
+const { getLojaIds, lojaPertenceAConta, checklistPertenceAConta, usuarioPertenceAConta, vinculoPertenceAConta } = require('../helpers/adminLojas')
 
 exports.listarChecklists = async (req, res) => {
   try {
@@ -51,6 +51,14 @@ exports.vincular = async (req, res) => {
   try {
     const { usuario_id, checklist_id } = req.body
 
+    const [usuarioOk, checklistOk] = await Promise.all([
+      usuarioPertenceAConta(usuario_id, req.userId, req.userPerfil),
+      checklistPertenceAConta(checklist_id, req.userId, req.userPerfil)
+    ])
+    if (!usuarioOk || !checklistOk) {
+      return res.status(404).json({ erro: 'Usuário ou tarefa não encontrado(a)' })
+    }
+
     // UPSERT: insere ou reativa se já existia (ativo=0)
     await run(
       `INSERT INTO usuario_checklists (usuario_id, checklist_id, ativo)
@@ -68,6 +76,16 @@ exports.vincular = async (req, res) => {
 exports.mover = async (req, res) => {
   try {
     const { from_usuario_id, to_usuario_id, checklist_id } = req.body
+
+    const [fromOk, toOk, checklistOk] = await Promise.all([
+      usuarioPertenceAConta(from_usuario_id, req.userId, req.userPerfil),
+      usuarioPertenceAConta(to_usuario_id, req.userId, req.userPerfil),
+      checklistPertenceAConta(checklist_id, req.userId, req.userPerfil)
+    ])
+    if (!fromOk || !toOk || !checklistOk) {
+      return res.status(404).json({ erro: 'Usuário ou tarefa não encontrado(a)' })
+    }
+
     // 1. Reativa/cria o vínculo no destino
     await run(
       `INSERT INTO usuario_checklists (usuario_id, checklist_id, ativo)
@@ -89,9 +107,13 @@ exports.mover = async (req, res) => {
 exports.desvincular = async (req, res) => {
   try {
     const { id } = req.params
-    
+
+    if (!(await vinculoPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Vínculo não encontrado' })
+    }
+
     await run('UPDATE usuario_checklists SET ativo = 0 WHERE id = ?', [id])
-    
+
     res.json({ message: 'Checklist desvinculado!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -102,6 +124,14 @@ exports.desvincular = async (req, res) => {
 exports.salvarOverrides = async (req, res) => {
   try {
     const { overrides } = req.body // [{id, bonus_override, desconto_override}]
+
+    // Confere TODOS os vínculos antes de alterar qualquer um (evita gravação parcial)
+    for (const o of overrides) {
+      if (!(await vinculoPertenceAConta(o.id, req.userId, req.userPerfil))) {
+        return res.status(404).json({ erro: 'Vínculo não encontrado' })
+      }
+    }
+
     for (const o of overrides) {
       await run(
         'UPDATE usuario_checklists SET bonus_override = ?, desconto_override = ? WHERE id = ?',

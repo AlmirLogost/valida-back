@@ -1,10 +1,17 @@
 const { query, run } = require('../config/database')
+const { getLojaIds, checklistPertenceAConta, checklistDataPertenceAConta } = require('../helpers/adminLojas')
 
 exports.listar = async (req, res) => {
   try {
     const { checklist_id, data_inicio, data_fim, loja_id } = req.query
-    let sql = 'SELECT cd.*, c.titulo as checklist_titulo FROM checklist_datas cd LEFT JOIN checklists c ON cd.checklist_id = c.id WHERE 1=1'
-    const params = []
+    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+    let sql = `
+      SELECT cd.*, c.titulo as checklist_titulo
+      FROM checklist_datas cd
+      LEFT JOIN checklists c ON cd.checklist_id = c.id
+      WHERE c.loja_id = ANY(?)
+    `
+    const params = [lojaIds]
 
     if (checklist_id) {
       sql += ' AND cd.checklist_id = ?'
@@ -33,6 +40,9 @@ exports.listar = async (req, res) => {
 exports.criar = async (req, res) => {
   try {
     const { checklist_id, data, tipo } = req.body
+    if (!(await checklistPertenceAConta(checklist_id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Tarefa não encontrada' })
+    }
     const result = await run(
       'INSERT INTO checklist_datas (checklist_id, data, tipo) VALUES (?, ?, ?)',
       [checklist_id, data, tipo]
@@ -46,6 +56,9 @@ exports.criar = async (req, res) => {
 exports.criarLote = async (req, res) => {
   try {
     const { checklist_id, data_inicio, data_fim, tipo } = req.body
+    if (!(await checklistPertenceAConta(checklist_id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Tarefa não encontrada' })
+    }
     const inicio = new Date(data_inicio)
     const fim = new Date(data_fim)
     const ids = []
@@ -68,6 +81,9 @@ exports.criarLote = async (req, res) => {
 exports.deletar = async (req, res) => {
   try {
     const { id } = req.params
+    if (!(await checklistDataPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Data não encontrada' })
+    }
     await run('DELETE FROM checklist_datas WHERE id = ?', [id])
     res.json({ message: 'Data removida!' })
   } catch (erro) {
@@ -79,6 +95,9 @@ exports.deletarPorChecklist = async (req, res) => {
   try {
     const { checklist_id } = req.params
     const { tipo } = req.query
+    if (!(await checklistPertenceAConta(checklist_id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Tarefa não encontrada' })
+    }
     let sql = 'DELETE FROM checklist_datas WHERE checklist_id = ?'
     const params = [checklist_id]
     if (tipo) {

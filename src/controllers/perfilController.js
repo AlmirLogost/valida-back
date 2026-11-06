@@ -6,12 +6,16 @@ const PERM_COLS = [
   'perm_relatorios', 'perm_configuracoes'
 ]
 
-// Listar perfis ativos (filtrar por loja_id quando fornecido)
+// Listar perfis ativos: os "de sistema" (loja_id NULL, ex. super_admin/fiscal/
+// operador) são globais e sempre aparecem; os cargos customizados só aparecem
+// se forem de uma loja da conta de quem está logado (nunca de outra empresa).
 exports.listar = async (req, res) => {
   try {
+    const { getLojaIds } = require('../helpers/adminLojas')
     const { loja_id } = req.query
-    let sql = 'SELECT * FROM perfis WHERE ativo = 1'
-    const params = []
+    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+    let sql = 'SELECT * FROM perfis WHERE ativo = 1 AND (loja_id IS NULL OR loja_id = ANY(?))'
+    const params = [lojaIds]
     if (loja_id) {
       sql += ' AND (loja_id = ? OR loja_id IS NULL)'
       params.push(loja_id)
