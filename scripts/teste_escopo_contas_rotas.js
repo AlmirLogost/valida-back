@@ -178,6 +178,10 @@ async function main() {
     if (perfisA.status === 200 && !perfisA.body.some(p => p.id === perfilB.lastID)) ok('A NÃO vê o cargo customizado da conta B na lista de perfis')
     else falhou('A NÃO vê o cargo customizado da conta B na lista de perfis', `cargo B apareceu! status ${perfisA.status}`)
 
+    console.log('-- perfis: atualizar / deletar (1.1c, item 2) --')
+    esperarStatus('A NÃO edita o cargo customizado da conta B', await chamar('PUT', `/perfis/${perfilB.lastID}`, tokenA, { rotulo: 'Hackeado' }), 404)
+    esperarStatus('A NÃO apaga o cargo customizado da conta B', await chamar('DELETE', `/perfis/${perfilB.lastID}`, tokenA), 404)
+
     console.log('-- usuario-checklists: listarChecklists / listarDisponiveis (1.1c, item 1) --')
     esperarStatus('A NÃO lê os checklists do Func B', await chamar('GET', `/usuarios/${funcB.lastID}/checklists`, tokenA), 404)
     esperarStatus('A NÃO lê os checklists disponíveis do Func B', await chamar('GET', `/usuarios/${funcB.lastID}/checklists-disponiveis`, tokenA), 404)
@@ -214,6 +218,10 @@ async function main() {
     const execBAinda = await query('SELECT status FROM execucoes WHERE id = ?', [execB.lastID])
     if (execBAinda[0]?.status === 'em_andamento') ok('Execução B continua em andamento (não foi concluída)')
     else falhou('Execução B continua em andamento (não foi concluída)', JSON.stringify(execBAinda[0]))
+
+    const perfilBAinda = await query('SELECT ativo, rotulo FROM perfis WHERE id = ?', [perfilB.lastID])
+    if (perfilBAinda[0]?.ativo === 1 && perfilBAinda[0]?.rotulo === `${PREFIXO}Cargo B`) ok('Cargo B continua ativo e sem alteração')
+    else falhou('Cargo B continua ativo e sem alteração', JSON.stringify(perfilBAinda[0]))
 
     const itemBAinda = await query('SELECT * FROM checklist_itens WHERE id = ?', [itemB.lastID])
     if (itemBAinda.length) ok('Item B ainda existe (não foi apagado)')

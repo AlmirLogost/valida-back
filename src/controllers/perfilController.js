@@ -83,6 +83,11 @@ exports.atualizar = async (req, res) => {
     const { id } = req.params
     const { rotulo, metodo_login, pode_acessar_painel, cor } = req.body
 
+    const { perfilPertenceAConta } = require('../helpers/adminLojas')
+    if (!(await perfilPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Perfil nao encontrado' })
+    }
+
     const perfil = await query('SELECT * FROM perfis WHERE id = ?', [id])
     if (perfil.length === 0) {
       return res.status(404).json({ erro: 'Perfil nao encontrado' })
@@ -126,6 +131,11 @@ exports.atualizar = async (req, res) => {
 exports.deletar = async (req, res) => {
   try {
     const { id } = req.params
+
+    const { perfilPertenceAConta } = require('../helpers/adminLojas')
+    if (!(await perfilPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Perfil nao encontrado' })
+    }
 
     const perfil = await query('SELECT * FROM perfis WHERE id = ?', [id])
     if (perfil.length === 0) {

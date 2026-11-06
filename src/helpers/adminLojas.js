@@ -79,6 +79,20 @@ async function checklistDataPertenceAConta(dataId, userId, userPerfil) {
   return checklistPertenceAConta(rows[0].checklist_id, userId, userPerfil)
 }
 
+// Confere se um cargo (perfis) pode ser editado/apagado por quem está logado.
+// Perfis "de sistema" (loja_id NULL, sistema=1 — ex. Super Admin/Fiscal/Operador)
+// são globais e compartilhados por todas as contas, então não têm dono — sempre
+// retorna true pra eles (mesma regra de acesso que já existia antes desta
+// checagem). Cargos customizados (criados por um dono/gerente) têm loja_id e
+// só pertencem a quem tem aquela loja na conta.
+async function perfilPertenceAConta(perfilId, userId, userPerfil) {
+  const rows = await query('SELECT loja_id, sistema FROM perfis WHERE id = ?', [perfilId])
+  if (!rows.length) return false
+  if (rows[0].sistema) return true
+  if (!rows[0].loja_id) return false
+  return lojaPertenceAConta(rows[0].loja_id, userId, userPerfil)
+}
+
 module.exports = {
   getAdminId,
   getLojaIds,
@@ -87,5 +101,6 @@ module.exports = {
   usuarioPertenceAConta,
   checklistItemPertenceAConta,
   vinculoPertenceAConta,
-  checklistDataPertenceAConta
+  checklistDataPertenceAConta,
+  perfilPertenceAConta
 }
