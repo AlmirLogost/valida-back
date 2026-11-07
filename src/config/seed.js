@@ -1,4 +1,3 @@
-const bcrypt = require('bcrypt')
 const { run, query } = require('./database')
 const seedDatabase = async () => {
   console.log('Inserindo dados...')
@@ -55,20 +54,10 @@ const seedDatabase = async () => {
   }
   console.log('Perfis padrao criados/atualizados!')
 
-  const senhaHash = await bcrypt.hash('admin123', 10)
-
-  await run(
-    `INSERT INTO usuarios (nome, email, senha, perfil, loja_id) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT (email) DO NOTHING`,
-    ['Admin VALIDA', 'admin@valida.app', senhaHash, 'super_admin', null]
-  )
-
   await run(
     `INSERT INTO lojas (nome) VALUES (?)
      ON CONFLICT DO NOTHING`,
     ['Restaurante Exemplo']
   )
-
-  console.log('Admin criado!')
 }
 module.exports = { seedDatabase }
