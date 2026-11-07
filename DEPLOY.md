@@ -82,6 +82,49 @@ esperado que apareça "already exists, skipping" pra todas elas.
 Cada comando deve terminar sem erro (pode aparecer `NOTICE` ou "already exists,
 skipping" — isso é esperado e não é problema).
 
+**Se a branch `reforma-acessos` já tiver sido mesclada na `main`** (confirme
+com `git log --oneline -5` depois do `git pull` do passo 2 — vai aparecer
+"middleware requirePermissao" ou "Acessos e Unidades" nos commits), rode
+também as migrations 005 a 011, **na ordem, depois das quatro acima**:
+
+```bash
+cd <caminho-do-projeto>/back
+psql -U postgres -d valida_v2 -f migrations/005_perfis_admin_id.sql
+psql -U postgres -d valida_v2 -f migrations/006_perfil_permissoes.sql
+psql -U postgres -d valida_v2 -f migrations/007_perfis_sistema.sql
+psql -U postgres -d valida_v2 -f migrations/008_usuario_lojas.sql
+psql -U postgres -d valida_v2 -f migrations/009_auditoria.sql
+psql -U postgres -d valida_v2 -f migrations/010_arquivamento.sql
+psql -U postgres -d valida_v2 -f migrations/011_corrige_matriz_perfis_sistema.sql
+```
+
+Se o servidor não tiver `psql` (no Mac de desenvolvimento não tinha — por
+isso existe `back/scripts/rodar_migrations.js`, que faz a mesma coisa usando
+Node), use isso no lugar dos comandos `psql` acima:
+
+```bash
+cd <caminho-do-projeto>/back
+node scripts/rodar_migrations.js
+```
+
+**Impacto pra quem já usa o sistema hoje (contas e colaboradores
+existentes):**
+- Ninguém perde acesso a nada. Toda loja/colaborador que já existia
+  continua com exatamente o mesmo acesso que tinha (as migrations só
+  preenchem dados novos a partir do que já existia — `admin_id` dos
+  cargos personalizados vem do `loja_id` atual deles; `usuario_lojas`
+  vem do `loja_id` de cada colaborador).
+- Cargos personalizados que a conta já tinha continuam funcionando
+  exatamente como antes (mesmas permissões, migradas das 8 colunas
+  antigas pra matriz nova — mapeamento documentado dentro da migration
+  006).
+- Um gerente que hoje só acessa a própria loja continua só vendo a
+  própria loja até alguém (o dono) vincular outras unidades a ele na
+  tela Equipe/Acessos.
+- Depois do deploy, toda ação de criar/editar/arquivar loja, colaborador
+  ou cargo passa a exigir a permissão certa no cargo de quem está
+  fazendo — o Dono nunca é afetado por isso.
+
 ---
 
 ## 4. Rodar a migração de PINs — ANTES de reiniciar o back
@@ -168,6 +211,11 @@ volte ao passo 1.
 - Numa conta de teste com trial vencido, suspensa ou cancelada: confirme que
   login e leitura continuam funcionando (inclusive "Meu plano"), mas criar,
   editar ou apagar algo mostra a mensagem de modo somente leitura.
+- **Se a Reforma de Acessos já foi mesclada**: entre como dono, confira que o
+  menu lateral continua mostrando tudo (Hoje/Unidades/Equipe/Acessos/
+  Relatórios/Configurações) e que o seletor de unidade mostra a bolinha de
+  status certa. Entre com um colaborador comum (operador/gerente) e confirme
+  que o menu dele mostra só o que faz sentido pro cargo.
 
 Se tudo isso funcionar, o deploy foi bem-sucedido.
 
@@ -265,3 +313,13 @@ vão estar em hash mas o código antigo vai tentar comparar texto puro — ou se
 login por PIN para de funcionar até você também desfazer esse passo. Nesse
 caso específico, restaurar o backup do banco (passo 3 acima) é a forma mais
 simples de desfazer, já que não existe um "desfazer hash" automático.
+
+**Sobre reverter a Reforma de Acessos (migrations 005-011) especificamente**:
+diferente do PIN, aqui não tem esse tipo de problema — as migrations só
+ADICIONAM colunas e tabelas novas (`admin_id`, `perfil_permissoes`,
+`usuario_lojas`, `auditoria`, `arquivado_em`/`arquivado_por`), nunca apagam
+nem alteram nada que já existia. Se precisar voltar o CÓDIGO pra antes da
+reforma (passo 2 acima) mas deixar essas colunas/tabelas no banco, não há
+problema algum — o código antigo simplesmente não usa elas, e nada quebra.
+Só restaure o backup (passo 3) se notar dados incorretos de verdade, não só
+por precaução.
