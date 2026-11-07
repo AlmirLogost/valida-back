@@ -1,7 +1,7 @@
 # Como subir as mudanças em produção
 
 Guia passo a passo, na **ordem exata**, pra levar pro servidor (Hostinger)
-tudo que foi feito nas sub-etapas 1.1 até 1.4. Rode os comandos um por um,
+tudo que foi feito nas sub-etapas 1.1 até 1.6 (Etapa 1 completa). Rode os comandos um por um,
 direto no terminal do servidor (via SSH), conferindo a saída de cada um antes
 de ir pro próximo.
 
@@ -64,14 +64,20 @@ antes o que seria perdido.
 ## 3. Rodar as migrations do banco (SQL)
 
 Todas usam `IF NOT EXISTS` — são seguras de rodar mesmo que alguma coluna já exista
-(ex.: se foi criada manualmente antes). Rode as três, na ordem:
+(ex.: se foi criada manualmente antes). Rode as quatro, na ordem:
 
 ```bash
 cd <caminho-do-projeto>/back
 psql -U postgres -d valida_v2 -f migrations/001_planos_subscriptions.sql
 psql -U postgres -d valida_v2 -f migrations/002_escopo_contas.sql
 psql -U postgres -d valida_v2 -f migrations/003_cadastro_dono.sql
+psql -U postgres -d valida_v2 -f migrations/004_minha_conta.sql
 ```
+
+A 004 é só por segurança/consistência: no banco de produção essas colunas
+(whatsapp, documento, email_cobranca, cep, endereco, cidade, estado) já foram
+adicionadas à mão antes, então o `IF NOT EXISTS` não vai alterar nada — é
+esperado que apareça "already exists, skipping" pra todas elas.
 
 Cada comando deve terminar sem erro (pode aparecer `NOTICE` ou "already exists,
 skipping" — isso é esperado e não é problema).
@@ -155,8 +161,24 @@ volte ao passo 1.
   entrar numa aba anônima **usando o celular**.
 - Erre o PIN 5 vezes de propósito (celular ou nome) — a 6ª tentativa deve dizer
   "Muitas tentativas..." mesmo acertando o PIN.
+- Abra a tela **Minha Conta**, confirme que os dados carregam (era o bug do
+  `/api/me` corrigido na 1.6) e teste a troca de senha (senha atual + nova,
+  mínimo 8 caracteres) — depois confirme que a senha antiga deixou de
+  funcionar e a nova funciona.
+- Numa conta de teste com trial vencido, suspensa ou cancelada: confirme que
+  login e leitura continuam funcionando (inclusive "Meu plano"), mas criar,
+  editar ou apagar algo mostra a mensagem de modo somente leitura.
 
 Se tudo isso funcionar, o deploy foi bem-sucedido.
+
+**Sobre o admin de exemplo (`admin@valida.app`)**: a partir da 1.6, o
+`seed.js` não cria mais esse usuário com senha fixa. Isso não afeta o admin
+que já existe em produção (o `ON CONFLICT DO NOTHING` nunca alterou essa
+linha) — é só pra garantir que nenhum ambiente novo nasça com uma senha
+conhecida. Se um dia precisar trocar a senha de uma conta direto no banco
+(ex.: esqueceu a senha e não tem acesso ao e-mail de recuperação), use
+`node scripts/redefinir_senha.js` — mas esse script é **só para o banco
+local**, nunca para produção.
 
 ---
 
