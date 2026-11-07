@@ -350,6 +350,20 @@ exports.duplicar = async (req, res) => {
 // Editor de matriz de permissões (Passo 4/5d) — só pra cargos
 // personalizados; cargos de sistema não são editáveis na matriz, só
 // duplicáveis (duplique pra ter uma versão própria e editável).
+exports.obterPermissoes = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { perfilPertenceAConta } = require('../helpers/adminLojas')
+    if (!(await perfilPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Perfil nao encontrado' })
+    }
+    const linhas = await query('SELECT modulo, acao, permitido FROM perfil_permissoes WHERE perfil_id = ?', [id])
+    res.json({ modulos: MODULOS_ACOES, permissoes: linhas.map(l => ({ modulo: l.modulo, acao: l.acao, permitido: l.permitido === 1 })) })
+  } catch (erro) {
+    res.status(500).json({ erro: erro.message })
+  }
+}
+
 exports.salvarPermissoes = async (req, res) => {
   try {
     const { id } = req.params

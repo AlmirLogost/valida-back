@@ -145,6 +145,34 @@ async function main() {
     if (editaMatrizSistema.status === 403) ok('editar a matriz de um cargo de sistema é recusado (precisa duplicar)')
     else falhou('editar matriz de cargo de sistema recusado', JSON.stringify(editaMatrizSistema))
 
+    console.log('-- GET da matriz devolve o que foi salvo --')
+    const matrizLida = await chamar('GET', `/perfis/${duplicado.body.id}/permissoes`, tokenDono)
+    const linhaUnidadesEditar = matrizLida.body?.permissoes?.find(p => p.modulo === 'unidades' && p.acao === 'editar')
+    if (matrizLida.status === 200 && linhaUnidadesEditar?.permitido === true) {
+      ok('GET /perfis/:id/permissoes devolve a permissão recém-salva')
+    } else {
+      falhou('GET da matriz devolve o salvo', JSON.stringify(matrizLida))
+    }
+
+    console.log('-- login de alguém com o cargo personalizado traz a matriz certa (é isso que o menu do front usa) --')
+    const pessoaCargoPersonalizado = await run(
+      `INSERT INTO usuarios (nome, email, senha, perfil, loja_id) VALUES (?, ?, ?, ?, ?)`,
+      [`${PREFIXO}Pessoa Matriz`, `${PREFIXO}pessoamatriz@teste.local`, hash, duplicado.body.nome, lojaA.lastID]
+    )
+    const loginPersonalizado = await chamar('POST', '/login', null, { email: `${PREFIXO}pessoamatriz@teste.local`, senha: 'teste123' })
+    const matrizDoLogin = loginPersonalizado.body?.user?.matriz
+    if (loginPersonalizado.status === 200 && matrizDoLogin?.unidades?.editar === true) {
+      ok('o login dessa pessoa já traz "unidades.editar: true" na matriz')
+    } else {
+      falhou('login traz a matriz certa', JSON.stringify(loginPersonalizado.body?.user?.matriz))
+    }
+    if (matrizDoLogin?.acessos?.ver === false || matrizDoLogin?.acessos?.ver === undefined) {
+      ok('a mesma pessoa NÃO tem acesso a "acessos" (não foi dado explicitamente)')
+    } else {
+      falhou('pessoa não deveria ter acesso a "acessos"', JSON.stringify(matrizDoLogin?.acessos))
+    }
+    await run('DELETE FROM usuarios WHERE id = ?', [pessoaCargoPersonalizado.lastID])
+
     console.log('-- arquivar cargo em uso: recusado sem substituto, funciona com substituto --')
     const perfisDeNovo = await chamar('GET', '/perfis', tokenDono)
     const cargoEmUsoApi = perfisDeNovo.body.find(p => p.rotulo === `${PREFIXO}Em Uso`)

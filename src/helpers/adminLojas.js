@@ -133,11 +133,25 @@ async function resolverPerfilPorNome(nomePerfil, adminId) {
   return rows[0] ?? null
 }
 
+// Monta a matriz de permissões de um perfil no formato que o front usa pra
+// decidir o que mostrar no menu: { modulo: { acao: true/false } }.
+async function matrizDoPerfil(perfilId) {
+  if (!perfilId) return {}
+  const linhas = await query('SELECT modulo, acao, permitido FROM perfil_permissoes WHERE perfil_id = ?', [perfilId])
+  const matriz = {}
+  for (const l of linhas) {
+    if (!matriz[l.modulo]) matriz[l.modulo] = {}
+    matriz[l.modulo][l.acao] = l.permitido === 1
+  }
+  return matriz
+}
+
 module.exports = {
   getAdminId,
   getLojaIds,
   getLojaIdsVisiveis,
   resolverPerfilPorNome,
+  matrizDoPerfil,
   lojaPertenceAConta,
   checklistPertenceAConta,
   usuarioPertenceAConta,

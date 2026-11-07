@@ -85,9 +85,10 @@ exports.login = async (req, res) => {
 
     // Buscar permissoes do perfil — escopado pela CONTA (admin_id), nunca
     // pegando por engano o cargo de mesmo nome de outra empresa.
-    const { getAdminId, resolverPerfilPorNome } = require('../helpers/adminLojas')
+    const { getAdminId, resolverPerfilPorNome, matrizDoPerfil } = require('../helpers/adminLojas')
     const adminIdLogin = await getAdminId(user.id, user.perfil)
     const perfilRow = await resolverPerfilPorNome(user.perfil, adminIdLogin)
+    const matriz = await matrizDoPerfil(perfilRow?.id)
     const permissoes = perfilRow ? {
       perm_dashboard: !!perfilRow.perm_dashboard,
       perm_criar_tarefas: !!perfilRow.perm_criar_tarefas,
@@ -111,7 +112,8 @@ exports.login = async (req, res) => {
         valor_tarefa_feita: user.valor_tarefa_feita,
         valor_mensal_fixo: user.valor_mensal_fixo,
         rotulo_perfil: perfilRow ? perfilRow.rotulo : user.perfil,
-        permissoes
+        permissoes,
+        matriz
       }
     });
 

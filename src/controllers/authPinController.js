@@ -178,9 +178,10 @@ async function responderLogin(res, user) {
 
   // Buscar permissoes do perfil — escopado pela CONTA (admin_id), nunca
   // pegando por engano o cargo de mesmo nome de outra empresa.
-  const { getAdminId, resolverPerfilPorNome } = require('../helpers/adminLojas')
+  const { getAdminId, resolverPerfilPorNome, matrizDoPerfil } = require('../helpers/adminLojas')
   const adminIdPin = await getAdminId(user.id, user.perfil)
   const perfilData = await resolverPerfilPorNome(user.perfil, adminIdPin)
+  const matriz = await matrizDoPerfil(perfilData?.id)
   const permissoes = perfilData ? {
     perm_dashboard: !!perfilData.perm_dashboard,
     perm_criar_tarefas: !!perfilData.perm_criar_tarefas,
@@ -209,7 +210,8 @@ async function responderLogin(res, user) {
       periodo_inicio: user.periodo_inicio || null,
       periodo_fim: user.periodo_fim || null,
       rotulo_perfil: perfilData ? perfilData.rotulo : user.perfil,
-      permissoes
+      permissoes,
+      matriz
     }
   })
 }
