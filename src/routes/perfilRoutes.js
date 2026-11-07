@@ -13,6 +13,8 @@ const { requirePermissao } = require('../middlewares/permissoes')
 router.get('/perfis', auth, perfilController.listar)
 router.post('/perfis', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('acessos.criar'), perfilController.criar)
 router.put('/perfis/:id', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('acessos.editar'), perfilController.atualizar)
+router.put('/perfis/:id/permissoes', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('acessos.editar'), perfilController.salvarPermissoes)
+router.post('/perfis/:id/duplicar', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('acessos.criar'), perfilController.duplicar)
 router.delete('/perfis/:id', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('acessos.arquivar'), perfilController.deletar)
 
 module.exports = router

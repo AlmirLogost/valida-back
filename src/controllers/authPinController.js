@@ -176,20 +176,20 @@ async function responderLogin(res, user) {
     { expiresIn: '30d' }
   )
 
-  // Buscar permissoes do perfil
-  const perfilData = await query(
-    'SELECT * FROM perfis WHERE nome = ? AND ativo = 1 LIMIT 1',
-    [user.perfil]
-  )
-  const permissoes = perfilData.length > 0 ? {
-    perm_dashboard: !!perfilData[0].perm_dashboard,
-    perm_criar_tarefas: !!perfilData[0].perm_criar_tarefas,
-    perm_executar_tarefas: !!perfilData[0].perm_executar_tarefas,
-    perm_conferir: !!perfilData[0].perm_conferir,
-    perm_gerenciar_equipe: !!perfilData[0].perm_gerenciar_equipe,
-    perm_gerenciar_lojas: !!perfilData[0].perm_gerenciar_lojas,
-    perm_relatorios: !!perfilData[0].perm_relatorios,
-    perm_configuracoes: !!perfilData[0].perm_configuracoes
+  // Buscar permissoes do perfil — escopado pela CONTA (admin_id), nunca
+  // pegando por engano o cargo de mesmo nome de outra empresa.
+  const { getAdminId, resolverPerfilPorNome } = require('../helpers/adminLojas')
+  const adminIdPin = await getAdminId(user.id, user.perfil)
+  const perfilData = await resolverPerfilPorNome(user.perfil, adminIdPin)
+  const permissoes = perfilData ? {
+    perm_dashboard: !!perfilData.perm_dashboard,
+    perm_criar_tarefas: !!perfilData.perm_criar_tarefas,
+    perm_executar_tarefas: !!perfilData.perm_executar_tarefas,
+    perm_conferir: !!perfilData.perm_conferir,
+    perm_gerenciar_equipe: !!perfilData.perm_gerenciar_equipe,
+    perm_gerenciar_lojas: !!perfilData.perm_gerenciar_lojas,
+    perm_relatorios: !!perfilData.perm_relatorios,
+    perm_configuracoes: !!perfilData.perm_configuracoes
   } : null
 
   res.json({
@@ -208,7 +208,7 @@ async function responderLogin(res, user) {
       periodo_comissao: user.periodo_comissao || 'mensal',
       periodo_inicio: user.periodo_inicio || null,
       periodo_fim: user.periodo_fim || null,
-      rotulo_perfil: perfilData.length > 0 ? perfilData[0].rotulo : user.perfil,
+      rotulo_perfil: perfilData ? perfilData.rotulo : user.perfil,
       permissoes
     }
   })

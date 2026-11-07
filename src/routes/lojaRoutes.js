@@ -10,6 +10,8 @@ router.get('/lojas/:id', auth, requirePermissao('unidades.ver'), lojaController.
 router.post('/lojas', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('unidades.criar'), checkLimite('lojas'), lojaController.criar)
 router.put('/lojas/:id', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('unidades.editar'), lojaController.atualizar)
 router.delete('/lojas/:id', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('unidades.arquivar'), lojaController.deletar)
+router.get('/lojas/:id/impacto-arquivamento', auth, requirePermissao('unidades.ver'), lojaController.impactoArquivamento)
+router.put('/lojas/:id/restaurar', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('unidades.arquivar'), lojaController.restaurar)
 
 // Horários e funcionamento
 router.put('/lojas/:id/toggle', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('unidades.editar'), lojaController.toggleAberta)

@@ -14,7 +14,8 @@ const seedDatabase = async () => {
   } else {
     await run(
       `UPDATE perfis SET perm_dashboard=1, perm_criar_tarefas=1, perm_executar_tarefas=1, perm_conferir=1,
-        perm_gerenciar_equipe=1, perm_gerenciar_lojas=1, perm_relatorios=1, perm_configuracoes=1, rotulo='Dono', ativo=1
+        perm_gerenciar_equipe=1, perm_gerenciar_lojas=1, perm_relatorios=1, perm_configuracoes=1,
+        rotulo='Dono', ativo=1, metodo_login='email_senha'
        WHERE nome = 'super_admin'`
     )
   }
@@ -31,7 +32,8 @@ const seedDatabase = async () => {
   } else {
     await run(
       `UPDATE perfis SET perm_dashboard=1, perm_criar_tarefas=1, perm_executar_tarefas=0, perm_conferir=1,
-        perm_gerenciar_equipe=1, perm_gerenciar_lojas=0, perm_relatorios=1, perm_configuracoes=0, ativo=1
+        perm_gerenciar_equipe=1, perm_gerenciar_lojas=0, perm_relatorios=1, perm_configuracoes=0,
+        ativo=1, metodo_login='pin'
        WHERE nome = 'fiscal' AND sistema = 1`
     )
   }
@@ -48,7 +50,8 @@ const seedDatabase = async () => {
   } else {
     await run(
       `UPDATE perfis SET perm_dashboard=0, perm_criar_tarefas=0, perm_executar_tarefas=1, perm_conferir=0,
-        perm_gerenciar_equipe=0, perm_gerenciar_lojas=0, perm_relatorios=0, perm_configuracoes=0, ativo=1
+        perm_gerenciar_equipe=0, perm_gerenciar_lojas=0, perm_relatorios=0, perm_configuracoes=0,
+        ativo=1, metodo_login='pin'
        WHERE nome = 'operador' AND sistema = 1`
     )
   }
@@ -64,7 +67,8 @@ const seedDatabase = async () => {
   } else {
     await run(
       `UPDATE perfis SET perm_dashboard=1, perm_criar_tarefas=1, perm_executar_tarefas=1, perm_conferir=1,
-        perm_gerenciar_equipe=1, perm_gerenciar_lojas=1, perm_relatorios=1, perm_configuracoes=0, ativo=1
+        perm_gerenciar_equipe=1, perm_gerenciar_lojas=1, perm_relatorios=1, perm_configuracoes=0,
+        ativo=1, metodo_login='email_senha'
        WHERE nome = 'gerente' AND sistema = 1`
     )
   }

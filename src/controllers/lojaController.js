@@ -5,16 +5,67 @@ const { registrarAuditoria } = require('../middlewares/permissoes')
 exports.listar = async (req, res) => {
   try {
     const todas = req.query.todas === '1'
+    const arquivadas = req.query.arquivadas === '1'
+    const { busca } = req.query
     const adminId = await getAdminId(req.userId, req.userPerfil)
     if (!adminId) return res.json([])
-    // Dono vê todas as lojas da conta; qualquer outro perfil só vê as
-    // unidades vinculadas a ele (usuario_lojas) — gerente da unidade A
-    // não aparece a loja B na lista, mesmo sendo da mesma conta.
-    const lojaIdsVisiveis = await getLojaIdsVisiveis(req.userId, req.userPerfil)
-    const lojas = todas
-      ? await query('SELECT * FROM lojas WHERE ativo >= 0 AND admin_id = ? AND id = ANY(?)', [adminId, lojaIdsVisiveis])
-      : await query('SELECT * FROM lojas WHERE ativo = 1 AND admin_id = ? AND id = ANY(?)', [adminId, lojaIdsVisiveis])
+    const condicaoAtivo = arquivadas ? '= -1' : (todas ? '>= 0' : '= 1')
+    let sql = `SELECT * FROM lojas WHERE ativo ${condicaoAtivo} AND admin_id = ?`
+    const params = [adminId]
+    if (!arquivadas) {
+      // Dono vê todas as lojas ativas da conta; qualquer outro perfil só
+      // vê as unidades vinculadas a ele (usuario_lojas) — gerente da
+      // unidade A não vê a loja B, mesmo sendo da mesma conta. Lojas
+      // arquivadas são restauradas só pelo dono (unidades.arquivar), por
+      // isso não entram nesse filtro por unidade.
+      const lojaIdsVisiveis = await getLojaIdsVisiveis(req.userId, req.userPerfil)
+      sql += ' AND id = ANY(?)'
+      params.push(lojaIdsVisiveis)
+    }
+    if (busca) { sql += ' AND nome ILIKE ?'; params.push(`%${busca}%`) }
+    sql += ' ORDER BY nome'
+    const lojas = await query(sql, params)
     res.json(lojas)
+  } catch (erro) {
+    res.status(500).json({ erro: erro.message })
+  }
+}
+
+// Resumo de impacto antes de arquivar — quantas tarefas e pessoas estão
+// nessa unidade, pra avisar o dono do que vai ficar "pausado" junto.
+exports.impactoArquivamento = async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!(await lojaPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Loja não encontrada' })
+    }
+    const [[tarefas], [pessoas]] = await Promise.all([
+      query('SELECT COUNT(*) AS total FROM checklists WHERE loja_id = ? AND ativo = 1', [id]),
+      query('SELECT COUNT(*) AS total FROM usuarios WHERE loja_id = ? AND ativo = 1', [id])
+    ])
+    res.json({ tarefas: Number(tarefas.total), pessoas: Number(pessoas.total) })
+  } catch (erro) {
+    res.status(500).json({ erro: erro.message })
+  }
+}
+
+// Restaura uma unidade arquivada (ativo = -1 -> 1), limpando quem/quando
+// arquivou.
+exports.restaurar = async (req, res) => {
+  try {
+    const { id } = req.params
+    // lojaPertenceAConta (via getLojaIds) só considera lojas com ativo >= 0
+    // — uma loja ARQUIVADA tem ativo = -1 e não passaria nessa checagem.
+    // Pra restaurar, confere direto pelo admin_id, aceitando qualquer
+    // status.
+    const adminId = await getAdminId(req.userId, req.userPerfil)
+    const rows = await query('SELECT admin_id FROM lojas WHERE id = ?', [id])
+    if (!adminId || !rows.length || rows[0].admin_id !== adminId) {
+      return res.status(404).json({ erro: 'Loja não encontrada' })
+    }
+    await run('UPDATE lojas SET ativo = 1, arquivado_em = NULL, arquivado_por = NULL WHERE id = ?', [id])
+    await registrarAuditoria(req, { acao: 'restaurar', entidade: 'loja', entidade_id: id })
+    res.json({ message: 'Loja restaurada!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
   }

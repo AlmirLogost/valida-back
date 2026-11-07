@@ -9,20 +9,7 @@
 // Dono (super_admin) sempre passa, em qualquer módulo/ação.
 
 const { query, run } = require('../config/database')
-const { getAdminId } = require('./../helpers/adminLojas')
-
-// Resolve o perfil (linha da tabela perfis) de quem está logado, já
-// considerando a conta certa — perfis de sistema (Dono/Gerente/Fiscal/
-// Operador) são globais; cargos personalizados só valem dentro da própria
-// conta (admin_id), nunca misturando com o cargo de mesmo nome de outra
-// empresa (era o bug corrigido na migration 005).
-async function resolverPerfilId(userPerfil, adminId) {
-  const rows = await query(
-    `SELECT id FROM perfis WHERE nome = ? AND ativo = 1 AND (sistema = 1 OR admin_id = ?) ORDER BY sistema DESC LIMIT 1`,
-    [userPerfil, adminId]
-  )
-  return rows[0]?.id ?? null
-}
+const { getAdminId, resolverPerfilPorNome } = require('./../helpers/adminLojas')
 
 // Confere se o usuário logado tem a permissão "modulo.acao". Uso direto
 // (fora de middleware) quando a checagem precisa acontecer dentro de um
@@ -31,12 +18,12 @@ async function temPermissao(userId, userPerfil, moduloAcao) {
   if (userPerfil === 'super_admin') return true
   const adminId = await getAdminId(userId, userPerfil)
   if (!adminId) return false
-  const perfilId = await resolverPerfilId(userPerfil, adminId)
-  if (!perfilId) return false
+  const perfil = await resolverPerfilPorNome(userPerfil, adminId)
+  if (!perfil) return false
   const [modulo, acao] = moduloAcao.split('.')
   const rows = await query(
     'SELECT permitido FROM perfil_permissoes WHERE perfil_id = ? AND modulo = ? AND acao = ?',
-    [perfilId, modulo, acao]
+    [perfil.id, modulo, acao]
   )
   return rows[0]?.permitido === 1
 }

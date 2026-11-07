@@ -83,20 +83,20 @@ exports.login = async (req, res) => {
       { expiresIn: '90d' }
     );
 
-    // Buscar permissoes do perfil
-    const perfilData = await query(
-      'SELECT * FROM perfis WHERE nome = ? AND ativo = 1 LIMIT 1',
-      [user.perfil]
-    )
-    const permissoes = perfilData.length > 0 ? {
-      perm_dashboard: !!perfilData[0].perm_dashboard,
-      perm_criar_tarefas: !!perfilData[0].perm_criar_tarefas,
-      perm_executar_tarefas: !!perfilData[0].perm_executar_tarefas,
-      perm_conferir: !!perfilData[0].perm_conferir,
-      perm_gerenciar_equipe: !!perfilData[0].perm_gerenciar_equipe,
-      perm_gerenciar_lojas: !!perfilData[0].perm_gerenciar_lojas,
-      perm_relatorios: !!perfilData[0].perm_relatorios,
-      perm_configuracoes: !!perfilData[0].perm_configuracoes
+    // Buscar permissoes do perfil — escopado pela CONTA (admin_id), nunca
+    // pegando por engano o cargo de mesmo nome de outra empresa.
+    const { getAdminId, resolverPerfilPorNome } = require('../helpers/adminLojas')
+    const adminIdLogin = await getAdminId(user.id, user.perfil)
+    const perfilRow = await resolverPerfilPorNome(user.perfil, adminIdLogin)
+    const permissoes = perfilRow ? {
+      perm_dashboard: !!perfilRow.perm_dashboard,
+      perm_criar_tarefas: !!perfilRow.perm_criar_tarefas,
+      perm_executar_tarefas: !!perfilRow.perm_executar_tarefas,
+      perm_conferir: !!perfilRow.perm_conferir,
+      perm_gerenciar_equipe: !!perfilRow.perm_gerenciar_equipe,
+      perm_gerenciar_lojas: !!perfilRow.perm_gerenciar_lojas,
+      perm_relatorios: !!perfilRow.perm_relatorios,
+      perm_configuracoes: !!perfilRow.perm_configuracoes
     } : null
 
     res.json({
@@ -110,7 +110,7 @@ exports.login = async (req, res) => {
         tipo_comissao: user.tipo_comissao,
         valor_tarefa_feita: user.valor_tarefa_feita,
         valor_mensal_fixo: user.valor_mensal_fixo,
-        rotulo_perfil: perfilData.length > 0 ? perfilData[0].rotulo : user.perfil,
+        rotulo_perfil: perfilRow ? perfilRow.rotulo : user.perfil,
         permissoes
       }
     });
@@ -135,8 +135,10 @@ exports.renovarToken = async (req, res) => {
     const user = users[0]
 
     // Mesma duração que o tipo de login original já usava: PIN=30d, resto=90d.
-    const perfilConfig = await query('SELECT metodo_login FROM perfis WHERE nome = ? AND ativo = 1', [user.perfil])
-    const expiresIn = perfilConfig[0]?.metodo_login === 'pin' ? '30d' : '90d'
+    const { getAdminId, resolverPerfilPorNome } = require('../helpers/adminLojas')
+    const adminIdRenovar = await getAdminId(user.id, user.perfil)
+    const perfilConfig = await resolverPerfilPorNome(user.perfil, adminIdRenovar)
+    const expiresIn = perfilConfig?.metodo_login === 'pin' ? '30d' : '90d'
 
     const token = jwt.sign({ id: user.id, perfil: user.perfil }, process.env.JWT_SECRET, { expiresIn })
     res.json({ token })

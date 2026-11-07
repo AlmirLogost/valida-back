@@ -81,16 +81,22 @@ const PERM_COLS = [
   'perm_relatorios', 'perm_configuracoes'
 ]
 
-// Listar perfis ativos: os "de sistema" (loja_id NULL, ex. super_admin/fiscal/
-// operador) são globais e sempre aparecem; os cargos customizados só aparecem
-// se forem de uma loja da conta de quem está logado (nunca de outra empresa).
+// Listar perfis ativos: os "de sistema" (sistema=1, ex. Dono/Gerente/Fiscal/
+// Operador) são globais e sempre aparecem; os cargos personalizados só
+// aparecem se forem da CONTA (admin_id) de quem está logado — nunca de
+// outra empresa.
 exports.listar = async (req, res) => {
   try {
-    const { getLojaIds } = require('../helpers/adminLojas')
+    const { getAdminId, getLojaIds } = require('../helpers/adminLojas')
     const { loja_id } = req.query
+    const adminId = await getAdminId(req.userId, req.userPerfil)
+    // "admin_id = ?" cobre os cargos criados depois da migration 005; o
+    // "OR" com loja_id cobre cargos antigos que nunca tiveram admin_id
+    // preenchido (não deveria sobrar nenhum, mas sem isso qualquer um
+    // ficaria invisível pra sempre pra quem o criou).
     const lojaIds = await getLojaIds(req.userId, req.userPerfil)
-    let sql = 'SELECT * FROM perfis WHERE ativo = 1 AND (loja_id IS NULL OR loja_id = ANY(?))'
-    const params = [lojaIds]
+    let sql = 'SELECT * FROM perfis WHERE ativo = 1 AND (sistema = 1 OR admin_id = ? OR (admin_id IS NULL AND loja_id = ANY(?)))'
+    const params = [adminId, lojaIds]
     if (loja_id) {
       sql += ' AND (loja_id = ? OR loja_id IS NULL)'
       params.push(loja_id)
@@ -241,19 +247,141 @@ exports.deletar = async (req, res) => {
       return res.status(403).json({ erro: 'Nao e possivel excluir perfis do sistema' })
     }
 
+    const { substituto_id } = req.body || {}
     const usuarios = await query(
       'SELECT COUNT(*) as total FROM usuarios WHERE perfil = ? AND ativo = 1',
       [perfil[0].nome]
     )
     if (usuarios[0].total > 0) {
-      return res.status(400).json({ 
-        erro: `Existem ${usuarios[0].total} usuario(s) com este perfil. Reatribua-os antes de excluir.` 
-      })
+      if (!substituto_id) {
+        return res.status(400).json({
+          erro: `Existem ${usuarios[0].total} usuario(s) com este perfil. Escolha um cargo substituto para reatribuí-los antes de arquivar.`,
+          usuarios_afetados: Number(usuarios[0].total)
+        })
+      }
+      const substituto = await query('SELECT nome FROM perfis WHERE id = ? AND ativo = 1', [substituto_id])
+      if (!substituto.length) {
+        return res.status(404).json({ erro: 'Cargo substituto não encontrado.' })
+      }
+      await run('UPDATE usuarios SET perfil = ? WHERE perfil = ? AND ativo = 1', [substituto[0].nome, perfil[0].nome])
     }
 
     await run('UPDATE perfis SET ativo = 0 WHERE id = ?', [id])
-    await registrarAuditoria(req, { acao: 'arquivar', entidade: 'perfil', entidade_id: id })
+    await registrarAuditoria(req, { acao: 'arquivar', entidade: 'perfil', entidade_id: id, detalhes: substituto_id ? { substituto_id } : undefined })
     res.json({ message: 'Perfil excluido!' })
+  } catch (erro) {
+    res.status(500).json({ erro: erro.message })
+  }
+}
+
+// Lista os módulos x ações válidos, pra validar o corpo de salvarPermissoes
+// e pra popular o editor de matriz no front.
+const MODULOS_ACOES = {
+  painel: ['ver'],
+  tarefas: ['ver', 'criar', 'editar', 'arquivar', 'executar'],
+  unidades: ['ver', 'criar', 'editar', 'arquivar'],
+  equipe: ['ver', 'criar', 'editar', 'arquivar'],
+  acessos: ['ver', 'criar', 'editar', 'arquivar'],
+  relatorios: ['ver'],
+  comissoes: ['ver_todas', 'ver_minhas'],
+  plano: ['ver'],
+  configuracoes: ['ver', 'editar']
+}
+exports.MODULOS_ACOES = MODULOS_ACOES
+
+// Duplicar um perfil (de sistema ou personalizado) — sempre cria um cargo
+// personalizado novo na conta de quem está logado, copiando a matriz de
+// permissões inteira. Perfis de sistema só podem ser duplicados, nunca
+// editados na matriz; duplicar é como o dono "destrava" um ponto de
+// partida editável a partir de um cargo padrão.
+exports.duplicar = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { getAdminId } = require('../helpers/adminLojas')
+    const adminId = await getAdminId(req.userId, req.userPerfil)
+    if (!adminId) return res.status(403).json({ erro: 'Conta não encontrada.' })
+
+    const { perfilPertenceAConta } = require('../helpers/adminLojas')
+    if (!(await perfilPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Perfil nao encontrado' })
+    }
+    const origem = await query('SELECT * FROM perfis WHERE id = ? AND ativo = 1', [id])
+    if (!origem.length) return res.status(404).json({ erro: 'Perfil nao encontrado' })
+    const p = origem[0]
+
+    const rotuloBase = `${p.rotulo} (cópia)`
+    let rotulo = rotuloBase
+    let slug = rotulo.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+    let tentativa = 1
+    while ((await query('SELECT id FROM perfis WHERE nome = ? AND admin_id = ? AND ativo = 1', [slug, adminId])).length > 0) {
+      tentativa++
+      rotulo = `${rotuloBase} ${tentativa}`
+      slug = rotulo.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+    }
+
+    const maxOrdem = await query('SELECT MAX(ordem) as max FROM perfis')
+    const proximaOrdem = (maxOrdem[0]?.max || 0) + 1
+
+    const novo = await run(
+      `INSERT INTO perfis (nome, rotulo, admin_id, metodo_login, pode_acessar_painel, cor, ordem, sistema,
+        ${PERM_COLS.join(', ')})
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ${PERM_COLS.map(() => '?').join(', ')})`,
+      [
+        slug, rotulo, adminId, p.metodo_login, p.pode_acessar_painel, p.cor, proximaOrdem,
+        ...PERM_COLS.map(col => p[col])
+      ]
+    )
+
+    const matriz = await query('SELECT modulo, acao, permitido FROM perfil_permissoes WHERE perfil_id = ?', [id])
+    for (const linha of matriz) {
+      await run(
+        'INSERT INTO perfil_permissoes (perfil_id, modulo, acao, permitido) VALUES (?, ?, ?, ?) ON CONFLICT (perfil_id, modulo, acao) DO NOTHING',
+        [novo.lastID, linha.modulo, linha.acao, linha.permitido]
+      )
+    }
+
+    await registrarAuditoria(req, { acao: 'criar', entidade: 'perfil', entidade_id: novo.lastID, detalhes: { duplicado_de: Number(id), rotulo } })
+    res.json({ id: novo.lastID, nome: slug, rotulo, message: 'Cargo duplicado!' })
+  } catch (erro) {
+    res.status(500).json({ erro: erro.message })
+  }
+}
+
+// Editor de matriz de permissões (Passo 4/5d) — só pra cargos
+// personalizados; cargos de sistema não são editáveis na matriz, só
+// duplicáveis (duplique pra ter uma versão própria e editável).
+exports.salvarPermissoes = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { permissoes } = req.body
+
+    const { perfilPertenceAConta } = require('../helpers/adminLojas')
+    if (!(await perfilPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Perfil nao encontrado' })
+    }
+    const perfil = await query('SELECT * FROM perfis WHERE id = ? AND ativo = 1', [id])
+    if (!perfil.length) return res.status(404).json({ erro: 'Perfil nao encontrado' })
+    if (perfil[0].sistema) {
+      return res.status(403).json({ erro: 'Cargos do sistema não podem ter a matriz editada — duplique o cargo para criar uma versão própria.' })
+    }
+    if (!Array.isArray(permissoes)) {
+      return res.status(400).json({ erro: 'Envie a lista de permissões.' })
+    }
+
+    for (const item of permissoes) {
+      const acoesValidas = MODULOS_ACOES[item?.modulo]
+      if (!acoesValidas || !acoesValidas.includes(item?.acao)) {
+        return res.status(400).json({ erro: `Módulo/ação inválido: ${item?.modulo}.${item?.acao}` })
+      }
+      await run(
+        `INSERT INTO perfil_permissoes (perfil_id, modulo, acao, permitido) VALUES (?, ?, ?, ?)
+         ON CONFLICT (perfil_id, modulo, acao) DO UPDATE SET permitido = EXCLUDED.permitido`,
+        [id, item.modulo, item.acao, item.permitido ? 1 : 0]
+      )
+    }
+
+    await registrarAuditoria(req, { acao: 'editar', entidade: 'perfil_permissoes', entidade_id: id })
+    res.json({ message: 'Permissões atualizadas!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
   }

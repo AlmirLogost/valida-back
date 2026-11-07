@@ -13,14 +13,25 @@ function normalizarCelular(valor) {
 exports.listar = async (req, res) => {
   try {
     const { loja_id } = req.query
-    const { getLojaIdsVisiveis } = require('../helpers/adminLojas')
-    // Dono vê a equipe de todas as lojas da conta; qualquer outro perfil só
-    // vê quem está nas unidades vinculadas a ele.
-    const lojaIds = await getLojaIdsVisiveis(req.userId, req.userPerfil)
+    const arquivados = req.query.arquivados === '1'
+    const { getLojaIdsVisiveis, getLojaIds } = require('../helpers/adminLojas')
     // "pin" nunca é devolvido pro front — ele guarda um hash, não serve pra exibir,
     // e nem o hash deveria sair da API sem necessidade.
-    let sql = `SELECT id, nome, email, perfil, loja_id, ativo, whatsapp AS celular, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim, score FROM usuarios WHERE ativo = 1 AND (loja_id = ANY(?) OR (perfil = 'super_admin' AND id = ?))`
-    const params = [lojaIds, req.userId]
+    const colunas = `id, nome, email, perfil, loja_id, ativo, whatsapp AS celular, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim, score`
+    let sql, params
+    if (arquivados) {
+      // Restaurar é ação do dono (equipe.arquivar) — lista por toda a
+      // conta, não só pelas unidades do próprio usuário.
+      const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+      sql = `SELECT ${colunas} FROM usuarios WHERE ativo = 0 AND (loja_id = ANY(?) OR (perfil = 'super_admin' AND id = ?))`
+      params = [lojaIds, req.userId]
+    } else {
+      // Dono vê a equipe de todas as lojas da conta; qualquer outro perfil
+      // só vê quem está nas unidades vinculadas a ele.
+      const lojaIds = await getLojaIdsVisiveis(req.userId, req.userPerfil)
+      sql = `SELECT ${colunas} FROM usuarios WHERE ativo = 1 AND (loja_id = ANY(?) OR (perfil = 'super_admin' AND id = ?))`
+      params = [lojaIds, req.userId]
+    }
     if (loja_id) { sql += ' AND loja_id = ?'; params.push(loja_id) }
     sql += ' ORDER BY nome'
     const usuarios = await query(sql, params)
@@ -32,20 +43,25 @@ exports.listar = async (req, res) => {
 
 exports.criar = async (req, res) => {
   try {
-    const { nome, email, senha, perfil, loja_id, pin, celular, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim } = req.body
+    const { nome, email, senha, perfil, loja_id, loja_ids, pin, celular, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim } = req.body
 
-    // A loja do novo colaborador precisa pertencer à conta de quem está criando
-    if (loja_id) {
-      const { getLojaIds } = require('../helpers/adminLojas')
-      const lojaIds = await getLojaIds(req.userId, req.userPerfil)
-      if (!lojaIds.includes(parseInt(loja_id))) {
-        return res.status(404).json({ erro: 'Loja não encontrada' })
-      }
+    // A loja do novo colaborador (e qualquer unidade extra em loja_ids,
+    // pra gerente com mais de uma unidade) precisa pertencer à conta de
+    // quem está criando.
+    const { getLojaIds, getAdminId, resolverPerfilPorNome } = require('../helpers/adminLojas')
+    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+    if (loja_id && !lojaIds.includes(parseInt(loja_id))) {
+      return res.status(404).json({ erro: 'Loja não encontrada' })
+    }
+    if (Array.isArray(loja_ids) && loja_ids.some(lid => !lojaIds.includes(parseInt(lid)))) {
+      return res.status(404).json({ erro: 'Loja não encontrada' })
     }
 
-    // Buscar configuração do perfil para determinar método de login
-    const perfilConfig = await query('SELECT * FROM perfis WHERE nome = ? AND ativo = 1', [perfil])
-    const metodoLogin = perfilConfig.length > 0 ? perfilConfig[0].metodo_login : 'email_senha'
+    // Buscar configuração do perfil (escopado pela conta de quem está
+    // criando) para determinar método de login
+    const adminIdCriar = await getAdminId(req.userId, req.userPerfil)
+    const perfilConfig = await resolverPerfilPorNome(perfil, adminIdCriar)
+    const metodoLogin = perfilConfig?.metodo_login || 'email_senha'
 
     if (metodoLogin === 'pin') {
       // Perfis com login por PIN: PIN e celular obrigatórios, email opcional.
@@ -93,8 +109,9 @@ exports.criar = async (req, res) => {
     )
     // Mantém usuario_lojas em dia pra quem é criado a partir de agora
     // (migration 008 só cobriu quem já existia antes da reforma).
-    if (loja_id) {
-      await run('INSERT INTO usuario_lojas (usuario_id, loja_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [result.lastID, loja_id])
+    const todasAsUnidades = [...new Set([loja_id, ...(Array.isArray(loja_ids) ? loja_ids : [])].filter(Boolean))]
+    for (const lid of todasAsUnidades) {
+      await run('INSERT INTO usuario_lojas (usuario_id, loja_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [result.lastID, lid])
     }
     await registrarAuditoria(req, { acao: 'criar', entidade: 'usuario', entidade_id: result.lastID, detalhes: { nome, perfil } })
     res.json({ id: result.lastID, message: 'Usuário criado!' })
@@ -106,17 +123,18 @@ exports.criar = async (req, res) => {
 exports.atualizar = async (req, res) => {
   try {
     const { id } = req.params
-    const { nome, email, perfil, loja_id, pin, celular, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim } = req.body
+    const { nome, email, perfil, loja_id, loja_ids, pin, celular, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim } = req.body
 
-    const { usuarioPertenceAConta, getLojaIds } = require('../helpers/adminLojas')
+    const { usuarioPertenceAConta, getLojaIds, getAdminId, resolverPerfilPorNome } = require('../helpers/adminLojas')
     if (!(await usuarioPertenceAConta(id, req.userId, req.userPerfil))) {
       return res.status(404).json({ erro: 'Usuário não encontrado' })
     }
-    if (loja_id) {
-      const lojaIds = await getLojaIds(req.userId, req.userPerfil)
-      if (!lojaIds.includes(parseInt(loja_id))) {
-        return res.status(404).json({ erro: 'Loja não encontrada' })
-      }
+    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+    if (loja_id && !lojaIds.includes(parseInt(loja_id))) {
+      return res.status(404).json({ erro: 'Loja não encontrada' })
+    }
+    if (Array.isArray(loja_ids) && loja_ids.some(lid => !lojaIds.includes(parseInt(lid)))) {
+      return res.status(404).json({ erro: 'Loja não encontrada' })
     }
 
     if (pin && !/^\d{4}$/.test(pin)) {
@@ -141,8 +159,9 @@ exports.atualizar = async (req, res) => {
     }
 
     // Buscar configuração do perfil para determinar se email é opcional
-    const perfilConfig = await query('SELECT * FROM perfis WHERE nome = ? AND ativo = 1', [perfil])
-    const metodoLogin = perfilConfig.length > 0 ? perfilConfig[0].metodo_login : 'email_senha'
+    const adminIdAtualizar = await getAdminId(req.userId, req.userPerfil)
+    const perfilConfig = await resolverPerfilPorNome(perfil, adminIdAtualizar)
+    const metodoLogin = perfilConfig?.metodo_login || 'email_senha'
 
     let emailFinal = email
     if (!email && metodoLogin === 'pin') {
@@ -175,7 +194,17 @@ exports.atualizar = async (req, res) => {
        WHERE id = ?`,
       [nome, emailFinal, perfil, loja_id || null, pinFinal, celularFinal, tipo_comissao || null, valor_tarefa_feita || 0, valor_desconto || 0, valor_mensal_fixo || 0, desconto_mensal || 0, periodo_comissao || 'mensal', periodo_inicio || null, periodo_fim || null, id]
     )
-    if (loja_id) {
+    if (Array.isArray(loja_ids)) {
+      // loja_ids veio explícito: substitui o conjunto completo de unidades
+      // (é o que a tela de editar unidades da pessoa manda).
+      await run('DELETE FROM usuario_lojas WHERE usuario_id = ?', [id])
+      const todasAsUnidades = [...new Set([loja_id, ...loja_ids].filter(Boolean))]
+      for (const lid of todasAsUnidades) {
+        await run('INSERT INTO usuario_lojas (usuario_id, loja_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [id, lid])
+      }
+    } else if (loja_id) {
+      // Só o campo único antigo: garante que essa unidade está presente,
+      // sem remover outras que a pessoa já tivesse.
       await run('INSERT INTO usuario_lojas (usuario_id, loja_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [id, loja_id])
     }
     await registrarAuditoria(req, { acao: 'editar', entidade: 'usuario', entidade_id: id, detalhes: { nome, perfil } })
@@ -368,5 +397,23 @@ exports.relatorioComissao = async (req, res) => {
   } catch (e) {
     console.error(e)
     res.status(500).json({ erro: 'Erro ao gerar relatório' })
+  }
+}
+
+// Restaura um colaborador arquivado (ativo = 0 -> 1), limpando quem/quando
+// arquivou. usuarioPertenceAConta não filtra pelo ativo da pessoa, então
+// funciona igual pra alguém já arquivado.
+exports.restaurar = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { usuarioPertenceAConta } = require('../helpers/adminLojas')
+    if (!(await usuarioPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Usuário não encontrado' })
+    }
+    await run('UPDATE usuarios SET ativo = 1, arquivado_em = NULL, arquivado_por = NULL WHERE id = ?', [id])
+    await registrarAuditoria(req, { acao: 'restaurar', entidade: 'usuario', entidade_id: id })
+    res.json({ message: 'Usuário restaurado!' })
+  } catch (erro) {
+    res.status(500).json({ erro: erro.message })
   }
 }

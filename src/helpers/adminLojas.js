@@ -98,23 +98,46 @@ async function checklistDataPertenceAConta(dataId, userId, userPerfil) {
 }
 
 // Confere se um cargo (perfis) pode ser editado/apagado por quem está logado.
-// Perfis "de sistema" (loja_id NULL, sistema=1 — ex. Super Admin/Fiscal/Operador)
-// são globais e compartilhados por todas as contas, então não têm dono — sempre
-// retorna true pra eles (mesma regra de acesso que já existia antes desta
-// checagem). Cargos customizados (criados por um dono/gerente) têm loja_id e
-// só pertencem a quem tem aquela loja na conta.
+// Perfis "de sistema" (sistema=1 — Dono/Gerente/Fiscal/Operador) são globais
+// e compartilhados por todas as contas, então não têm dono — sempre
+// retorna true pra eles. Cargos personalizados (Reforma de Acessos, Passo
+// 2a) pertencem à CONTA (admin_id), não mais a uma loja específica —
+// loja_id só é usado como fallback pra cargos antigos que nunca tiveram
+// admin_id preenchido (não deveria acontecer depois da migration 005, mas
+// não custa ser defensivo).
 async function perfilPertenceAConta(perfilId, userId, userPerfil) {
-  const rows = await query('SELECT loja_id, sistema FROM perfis WHERE id = ?', [perfilId])
+  const rows = await query('SELECT loja_id, sistema, admin_id FROM perfis WHERE id = ?', [perfilId])
   if (!rows.length) return false
   if (rows[0].sistema) return true
+  if (rows[0].admin_id) {
+    const adminId = await getAdminId(userId, userPerfil)
+    return !!adminId && adminId === rows[0].admin_id
+  }
   if (!rows[0].loja_id) return false
   return lojaPertenceAConta(rows[0].loja_id, userId, userPerfil)
+}
+
+// Resolve a linha de "perfis" certa a partir do NOME do cargo + a conta —
+// essencial desde que cargo personalizado pôde ganhar o mesmo "nome" (slug)
+// em contas diferentes (ex.: duas empresas com um cargo "gerente_noturno"
+// cada). Antes da migration 005/admin_id, várias checagens (login,
+// renovação de token, criar/editar colaborador) buscavam só por nome, sem
+// conta — podendo pegar o cargo errado quando duas contas usavam o mesmo
+// nome. Perfis de sistema (sistema=1) são globais e batem independente da
+// conta.
+async function resolverPerfilPorNome(nomePerfil, adminId) {
+  const rows = await query(
+    'SELECT * FROM perfis WHERE nome = ? AND ativo = 1 AND (sistema = 1 OR admin_id = ?) ORDER BY sistema DESC LIMIT 1',
+    [nomePerfil, adminId]
+  )
+  return rows[0] ?? null
 }
 
 module.exports = {
   getAdminId,
   getLojaIds,
   getLojaIdsVisiveis,
+  resolverPerfilPorNome,
   lojaPertenceAConta,
   checklistPertenceAConta,
   usuarioPertenceAConta,
