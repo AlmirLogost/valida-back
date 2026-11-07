@@ -85,6 +85,8 @@ const createTables = async () => {
       hora_reset TEXT,
       ativo INTEGER DEFAULT 1,
       admin_id INTEGER,
+      arquivado_em TIMESTAMP,
+      arquivado_por INTEGER,
       criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `)
@@ -111,6 +113,7 @@ const createTables = async () => {
       nome TEXT NOT NULL,
       rotulo TEXT NOT NULL,
       loja_id INTEGER,
+      admin_id INTEGER,
       metodo_login TEXT DEFAULT 'pin',
       pode_acessar_painel INTEGER DEFAULT 0,
       cor TEXT DEFAULT '#3483fa',
@@ -137,6 +140,8 @@ const createTables = async () => {
       perfil TEXT,
       loja_id INTEGER,
       ativo INTEGER DEFAULT 1,
+      arquivado_em TIMESTAMP,
+      arquivado_por INTEGER,
       score INTEGER DEFAULT 0,
       razao_social TEXT,
       whatsapp TEXT,
@@ -327,6 +332,43 @@ const createTables = async () => {
       gateway_subscription_id TEXT,
       criado_em               TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       atualizado_em           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+
+  // Reforma de Acessos: matriz de permissões por módulo x ação (migration 006)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS perfil_permissoes (
+      id SERIAL PRIMARY KEY,
+      perfil_id INTEGER NOT NULL REFERENCES perfis(id) ON DELETE CASCADE,
+      modulo TEXT NOT NULL,
+      acao TEXT NOT NULL,
+      permitido INTEGER NOT NULL DEFAULT 0,
+      UNIQUE (perfil_id, modulo, acao)
+    )
+  `)
+
+  // Reforma de Acessos: um usuário pode ter acesso a várias lojas (migration 008)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS usuario_lojas (
+      id SERIAL PRIMARY KEY,
+      usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+      loja_id INTEGER NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+      criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (usuario_id, loja_id)
+    )
+  `)
+
+  // Reforma de Acessos: auditoria de ações importantes (migration 009)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auditoria (
+      id SERIAL PRIMARY KEY,
+      admin_id INTEGER NOT NULL,
+      usuario_id INTEGER,
+      acao TEXT NOT NULL,
+      entidade TEXT NOT NULL,
+      entidade_id INTEGER,
+      detalhes JSONB,
+      criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `)
 
