@@ -1,5 +1,6 @@
 const bcrypt = require('bcrypt')
 const { query, run } = require('../config/database')
+const { registrarAuditoria } = require('../middlewares/permissoes')
 
 // Guarda só dígitos (ex.: "(11) 99999-9999" -> "11999999999"), ou null se vazio.
 // Usado tanto pra salvar o celular do colaborador quanto pra buscar no login por PIN.
@@ -12,8 +13,10 @@ function normalizarCelular(valor) {
 exports.listar = async (req, res) => {
   try {
     const { loja_id } = req.query
-    const { getLojaIds } = require('../helpers/adminLojas')
-    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+    const { getLojaIdsVisiveis } = require('../helpers/adminLojas')
+    // Dono vê a equipe de todas as lojas da conta; qualquer outro perfil só
+    // vê quem está nas unidades vinculadas a ele.
+    const lojaIds = await getLojaIdsVisiveis(req.userId, req.userPerfil)
     // "pin" nunca é devolvido pro front — ele guarda um hash, não serve pra exibir,
     // e nem o hash deveria sair da API sem necessidade.
     let sql = `SELECT id, nome, email, perfil, loja_id, ativo, whatsapp AS celular, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim, score FROM usuarios WHERE ativo = 1 AND (loja_id = ANY(?) OR (perfil = 'super_admin' AND id = ?))`
@@ -88,6 +91,12 @@ exports.criar = async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [nome, emailFinal, senhaHash, perfil, loja_id || null, pinHash, normalizarCelular(celular), tipo_comissao || null, valor_tarefa_feita || 0, valor_desconto || 0, valor_mensal_fixo || 0, desconto_mensal || 0, periodo_comissao || 'mensal', periodo_inicio || null, periodo_fim || null]
     )
+    // Mantém usuario_lojas em dia pra quem é criado a partir de agora
+    // (migration 008 só cobriu quem já existia antes da reforma).
+    if (loja_id) {
+      await run('INSERT INTO usuario_lojas (usuario_id, loja_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [result.lastID, loja_id])
+    }
+    await registrarAuditoria(req, { acao: 'criar', entidade: 'usuario', entidade_id: result.lastID, detalhes: { nome, perfil } })
     res.json({ id: result.lastID, message: 'Usuário criado!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -166,6 +175,10 @@ exports.atualizar = async (req, res) => {
        WHERE id = ?`,
       [nome, emailFinal, perfil, loja_id || null, pinFinal, celularFinal, tipo_comissao || null, valor_tarefa_feita || 0, valor_desconto || 0, valor_mensal_fixo || 0, desconto_mensal || 0, periodo_comissao || 'mensal', periodo_inicio || null, periodo_fim || null, id]
     )
+    if (loja_id) {
+      await run('INSERT INTO usuario_lojas (usuario_id, loja_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [id, loja_id])
+    }
+    await registrarAuditoria(req, { acao: 'editar', entidade: 'usuario', entidade_id: id, detalhes: { nome, perfil } })
     res.json({ message: 'Usuário atualizado!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -179,7 +192,11 @@ exports.deletar = async (req, res) => {
     if (!(await usuarioPertenceAConta(id, req.userId, req.userPerfil))) {
       return res.status(404).json({ erro: 'Usuário não encontrado' })
     }
-    await run('UPDATE usuarios SET ativo = 0 WHERE id = ?', [id])
+    // Mantém ativo = 0 (como já era — mudar esse valor exigiria revisar todo
+    // filtro "ativo = 1" do sistema, fora do escopo deste passo). Só soma
+    // data/quem arquivou, que são novos e não afetam nenhuma consulta ainda.
+    await run('UPDATE usuarios SET ativo = 0, arquivado_em = NOW(), arquivado_por = ? WHERE id = ?', [req.userId, id])
+    await registrarAuditoria(req, { acao: 'arquivar', entidade: 'usuario', entidade_id: id })
     res.json({ message: 'Usuário desativado!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })

@@ -14,7 +14,7 @@ const seedDatabase = async () => {
   } else {
     await run(
       `UPDATE perfis SET perm_dashboard=1, perm_criar_tarefas=1, perm_executar_tarefas=1, perm_conferir=1,
-        perm_gerenciar_equipe=1, perm_gerenciar_lojas=1, perm_relatorios=1, perm_configuracoes=1, rotulo='Dono'
+        perm_gerenciar_equipe=1, perm_gerenciar_lojas=1, perm_relatorios=1, perm_configuracoes=1, rotulo='Dono', ativo=1
        WHERE nome = 'super_admin'`
     )
   }
@@ -31,7 +31,7 @@ const seedDatabase = async () => {
   } else {
     await run(
       `UPDATE perfis SET perm_dashboard=1, perm_criar_tarefas=1, perm_executar_tarefas=0, perm_conferir=1,
-        perm_gerenciar_equipe=1, perm_gerenciar_lojas=0, perm_relatorios=1, perm_configuracoes=0
+        perm_gerenciar_equipe=1, perm_gerenciar_lojas=0, perm_relatorios=1, perm_configuracoes=0, ativo=1
        WHERE nome = 'fiscal' AND sistema = 1`
     )
   }
@@ -48,7 +48,7 @@ const seedDatabase = async () => {
   } else {
     await run(
       `UPDATE perfis SET perm_dashboard=0, perm_criar_tarefas=0, perm_executar_tarefas=1, perm_conferir=0,
-        perm_gerenciar_equipe=0, perm_gerenciar_lojas=0, perm_relatorios=0, perm_configuracoes=0
+        perm_gerenciar_equipe=0, perm_gerenciar_lojas=0, perm_relatorios=0, perm_configuracoes=0, ativo=1
        WHERE nome = 'operador' AND sistema = 1`
     )
   }
@@ -64,16 +64,19 @@ const seedDatabase = async () => {
   } else {
     await run(
       `UPDATE perfis SET perm_dashboard=1, perm_criar_tarefas=1, perm_executar_tarefas=1, perm_conferir=1,
-        perm_gerenciar_equipe=1, perm_gerenciar_lojas=1, perm_relatorios=1, perm_configuracoes=0
+        perm_gerenciar_equipe=1, perm_gerenciar_lojas=1, perm_relatorios=1, perm_configuracoes=0, ativo=1
        WHERE nome = 'gerente' AND sistema = 1`
     )
   }
   console.log('Perfis padrao criados/atualizados!')
 
   // Reforma de Acessos: garante a matriz de permissões (perfil_permissoes)
-  // de todos os perfis de sistema — mesmo mapeamento das migrations 006/007.
-  // ON CONFLICT DO NOTHING: nunca sobrescreve um ajuste manual já feito na
-  // matriz (exceto o bloco do Dono, que sempre força tudo ligado).
+  // de todos os perfis de sistema — mesmo mapeamento da migration 006.
+  // DO UPDATE (não DO NOTHING): perfis de sistema não são editáveis na
+  // matriz pelo dono, então as colunas antigas são sempre a fonte de
+  // verdade — isso evita repetir o problema da migration 011 (um valor
+  // desatualizado travado pra sempre num cargo que já existia antes da
+  // reforma rodar a primeira vez).
   await run(`
     INSERT INTO perfil_permissoes (perfil_id, modulo, acao, permitido)
     SELECT id, 'painel', 'ver', perm_dashboard FROM perfis WHERE sistema = 1
@@ -100,7 +103,7 @@ const seedDatabase = async () => {
     UNION ALL SELECT id, 'acessos', 'editar', 0 FROM perfis WHERE sistema = 1
     UNION ALL SELECT id, 'acessos', 'arquivar', 0 FROM perfis WHERE sistema = 1
     UNION ALL SELECT id, 'plano', 'ver', 0 FROM perfis WHERE sistema = 1
-    ON CONFLICT (perfil_id, modulo, acao) DO NOTHING
+    ON CONFLICT (perfil_id, modulo, acao) DO UPDATE SET permitido = EXCLUDED.permitido
   `)
   await run(`
     INSERT INTO perfil_permissoes (perfil_id, modulo, acao, permitido)

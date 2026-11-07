@@ -1,14 +1,19 @@
 const { query, run } = require('../config/database')
-const { getAdminId, lojaPertenceAConta } = require('../helpers/adminLojas')
+const { getAdminId, lojaPertenceAConta, getLojaIdsVisiveis } = require('../helpers/adminLojas')
+const { registrarAuditoria } = require('../middlewares/permissoes')
 
 exports.listar = async (req, res) => {
   try {
     const todas = req.query.todas === '1'
     const adminId = await getAdminId(req.userId, req.userPerfil)
     if (!adminId) return res.json([])
+    // Dono vê todas as lojas da conta; qualquer outro perfil só vê as
+    // unidades vinculadas a ele (usuario_lojas) — gerente da unidade A
+    // não aparece a loja B na lista, mesmo sendo da mesma conta.
+    const lojaIdsVisiveis = await getLojaIdsVisiveis(req.userId, req.userPerfil)
     const lojas = todas
-      ? await query('SELECT * FROM lojas WHERE ativo >= 0 AND admin_id = ?', [adminId])
-      : await query('SELECT * FROM lojas WHERE ativo = 1 AND admin_id = ?', [adminId])
+      ? await query('SELECT * FROM lojas WHERE ativo >= 0 AND admin_id = ? AND id = ANY(?)', [adminId, lojaIdsVisiveis])
+      : await query('SELECT * FROM lojas WHERE ativo = 1 AND admin_id = ? AND id = ANY(?)', [adminId, lojaIdsVisiveis])
     res.json(lojas)
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -24,6 +29,7 @@ exports.criar = async (req, res) => {
       'INSERT INTO lojas (nome, endereco, cidade, estado, telefone, setores, admin_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [nome, endereco, cidade, estado, telefone, setores, adminId]
     )
+    await registrarAuditoria(req, { acao: 'criar', entidade: 'loja', entidade_id: result.lastID, detalhes: { nome } })
     res.json({ id: result.lastID, message: 'Loja criada!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -42,6 +48,7 @@ exports.atualizar = async (req, res) => {
       'UPDATE lojas SET nome = ?, endereco = ?, cidade = ?, estado = ?, telefone = ?, setores = ?, ativo = ? WHERE id = ?',
       [nome, endereco, cidade, estado, telefone, setores, ativoVal, id]
     )
+    await registrarAuditoria(req, { acao: 'editar', entidade: 'loja', entidade_id: id, detalhes: { nome } })
     res.json({ message: 'Loja atualizada!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -54,7 +61,8 @@ exports.deletar = async (req, res) => {
     if (!(await lojaPertenceAConta(id, req.userId, req.userPerfil))) {
       return res.status(404).json({ erro: 'Loja não encontrada' })
     }
-    await run('UPDATE lojas SET ativo = -1 WHERE id = ?', [id])
+    await run('UPDATE lojas SET ativo = -1, arquivado_em = NOW(), arquivado_por = ? WHERE id = ?', [req.userId, id])
+    await registrarAuditoria(req, { acao: 'arquivar', entidade: 'loja', entidade_id: id })
     res.json({ message: 'Loja desativada!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })

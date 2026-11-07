@@ -31,6 +31,24 @@ async function getLojaIds(userId, userPerfil) {
   return rows.map(r => r.id)
 }
 
+// Reforma de Acessos: diferente de getLojaIds (todas as lojas da CONTA,
+// usado pra checar "isso é da minha empresa?"), esta função retorna só as
+// lojas que O USUÁRIO ESPECÍFICO pode ver/usar — o que listagens devem
+// respeitar (ex.: gerente da unidade A não deve ver a unidade B na lista,
+// mesmo sendo da mesma conta).
+//
+// Dono (super_admin) sempre vê todas as lojas da conta. Qualquer outro
+// perfil vê só as lojas vinculadas a ele em usuario_lojas; se ainda não
+// tiver nenhum vínculo lá (conta criada antes da migration 008 rodar, caso
+// raro), cai pra usuarios.loja_id, pra nunca ficar sem ver a própria loja.
+async function getLojaIdsVisiveis(userId, userPerfil) {
+  if (userPerfil === 'super_admin') return getLojaIds(userId, userPerfil)
+  const vinculos = await query('SELECT loja_id FROM usuario_lojas WHERE usuario_id = ?', [userId])
+  if (vinculos.length > 0) return vinculos.map(v => v.loja_id)
+  const rows = await query('SELECT loja_id FROM usuarios WHERE id = ?', [userId])
+  return rows[0]?.loja_id ? [rows[0].loja_id] : []
+}
+
 // Confere se uma loja específica pertence à conta do usuário logado.
 async function lojaPertenceAConta(lojaId, userId, userPerfil) {
   if (!lojaId) return false
@@ -96,6 +114,7 @@ async function perfilPertenceAConta(perfilId, userId, userPerfil) {
 module.exports = {
   getAdminId,
   getLojaIds,
+  getLojaIdsVisiveis,
   lojaPertenceAConta,
   checklistPertenceAConta,
   usuarioPertenceAConta,

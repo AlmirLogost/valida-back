@@ -1,4 +1,79 @@
 const { query, run } = require('../config/database')
+const { registrarAuditoria } = require('../middlewares/permissoes')
+
+// Mapeia as 8 colunas antigas pra matriz nova (mesma lógica das migrations
+// 006/007) — usado aqui pra todo cargo personalizado criado a partir de
+// agora já nascer com linhas em perfil_permissoes, e requirePermissao nunca
+// encontrar "nenhuma linha" (que seria tratado como sem permissão).
+async function seedMatrizPermissoes(perfilId, permValues) {
+  const [dash, criarTarefas, executar, conferir, equipe, lojas, relatorios, config] = permValues
+  const linhas = [
+    ['painel', 'ver', dash],
+    ['tarefas', 'ver', criarTarefas || executar ? 1 : 0],
+    ['tarefas', 'criar', criarTarefas],
+    ['tarefas', 'editar', criarTarefas],
+    ['tarefas', 'arquivar', criarTarefas],
+    ['tarefas', 'executar', executar],
+    ['unidades', 'ver', lojas],
+    ['unidades', 'criar', lojas],
+    ['unidades', 'editar', lojas],
+    ['unidades', 'arquivar', lojas],
+    ['equipe', 'ver', equipe],
+    ['equipe', 'criar', equipe],
+    ['equipe', 'editar', equipe],
+    ['equipe', 'arquivar', equipe],
+    ['relatorios', 'ver', relatorios || conferir ? 1 : 0],
+    ['comissoes', 'ver_todas', equipe],
+    ['comissoes', 'ver_minhas', 1],
+    ['configuracoes', 'ver', config],
+    ['configuracoes', 'editar', config],
+    ['acessos', 'ver', 0],
+    ['acessos', 'criar', 0],
+    ['acessos', 'editar', 0],
+    ['acessos', 'arquivar', 0],
+    ['plano', 'ver', 0]
+  ]
+  for (const [modulo, acao, permitido] of linhas) {
+    await run(
+      'INSERT INTO perfil_permissoes (perfil_id, modulo, acao, permitido) VALUES (?, ?, ?, ?) ON CONFLICT (perfil_id, modulo, acao) DO NOTHING',
+      [perfilId, modulo, acao, permitido ? 1 : 0]
+    )
+  }
+}
+
+// Mesma lógica de seedMatrizPermissoes, mas sobrescrevendo — usado quando o
+// dono edita as 8 colunas antigas pela tela atual (antes do editor de
+// matriz do Passo 4 existir), pra matriz nova não ficar desatualizada.
+async function sincronizarMatrizPermissoes(perfilId, permValues) {
+  const [dash, criarTarefas, executar, conferir, equipe, lojas, relatorios, config] = permValues
+  const linhas = [
+    ['painel', 'ver', dash],
+    ['tarefas', 'ver', criarTarefas || executar ? 1 : 0],
+    ['tarefas', 'criar', criarTarefas],
+    ['tarefas', 'editar', criarTarefas],
+    ['tarefas', 'arquivar', criarTarefas],
+    ['tarefas', 'executar', executar],
+    ['unidades', 'ver', lojas],
+    ['unidades', 'criar', lojas],
+    ['unidades', 'editar', lojas],
+    ['unidades', 'arquivar', lojas],
+    ['equipe', 'ver', equipe],
+    ['equipe', 'criar', equipe],
+    ['equipe', 'editar', equipe],
+    ['equipe', 'arquivar', equipe],
+    ['relatorios', 'ver', relatorios || conferir ? 1 : 0],
+    ['comissoes', 'ver_todas', equipe],
+    ['configuracoes', 'ver', config],
+    ['configuracoes', 'editar', config]
+  ]
+  for (const [modulo, acao, permitido] of linhas) {
+    await run(
+      `INSERT INTO perfil_permissoes (perfil_id, modulo, acao, permitido) VALUES (?, ?, ?, ?)
+       ON CONFLICT (perfil_id, modulo, acao) DO UPDATE SET permitido = EXCLUDED.permitido`,
+      [perfilId, modulo, acao, permitido ? 1 : 0]
+    )
+  }
+}
 
 const PERM_COLS = [
   'perm_dashboard', 'perm_criar_tarefas', 'perm_executar_tarefas',
@@ -37,8 +112,11 @@ exports.criar = async (req, res) => {
       return res.status(400).json({ erro: 'Nome do cargo e obrigatorio' })
     }
 
+    const { lojaPertenceAConta, getAdminId } = require('../helpers/adminLojas')
+    const adminId = await getAdminId(req.userId, req.userPerfil)
+    if (!adminId) return res.status(403).json({ erro: 'Conta não encontrada.' })
+
     if (loja_id) {
-      const { lojaPertenceAConta } = require('../helpers/adminLojas')
       if (!(await lojaPertenceAConta(loja_id, req.userId, req.userPerfil))) {
         return res.status(404).json({ erro: 'Loja não encontrada' })
       }
@@ -46,13 +124,15 @@ exports.criar = async (req, res) => {
 
     const slug = (nome || rotulo).toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
 
-    // Duas queries em vez de uma condição "? IS NULL": quando o parâmetro só
-    // aparece nesse teste, o Postgres não consegue inferir o tipo dele
-    // ("could not determine data type of parameter") e a query falhava toda
-    // vez que loja_id vinha preenchido (o caso mais comum).
-    const existente = loja_id
-      ? await query('SELECT id, nome FROM perfis WHERE nome = ? AND loja_id = ? AND ativo = 1', [slug, loja_id])
-      : await query('SELECT id, nome FROM perfis WHERE nome = ? AND loja_id IS NULL AND ativo = 1', [slug])
+    const RESERVADOS = ['super_admin', 'fiscal', 'operador', 'gerente']
+    if (RESERVADOS.includes(slug)) {
+      return res.status(400).json({ erro: 'Esse nome de cargo é reservado para um cargo do sistema. Escolha outro nome.' })
+    }
+
+    // Cargo agora é da CONTA (admin_id), não mais de uma loja específica —
+    // duas contas podem ter cada uma um cargo com o mesmo nome sem se
+    // misturar (era o bug corrigido na migration 005).
+    const existente = await query('SELECT id, nome FROM perfis WHERE nome = ? AND admin_id = ? AND ativo = 1', [slug, adminId])
     if (existente.length > 0) {
       // Já existe — retorna o existente em vez de erro
       return res.json({ id: existente[0].id, nome: existente[0].nome, message: 'Cargo já existia' })
@@ -62,25 +142,27 @@ exports.criar = async (req, res) => {
     const proximaOrdem = (maxOrdem[0]?.max || 0) + 1
 
     const permValues = PERM_COLS.map(col => req.body[col] ? 1 : 0)
-    
-    const temAcessoPainel = pode_acessar_painel || 
-      req.body.perm_dashboard || req.body.perm_criar_tarefas || 
-      req.body.perm_conferir || req.body.perm_gerenciar_equipe || 
-      req.body.perm_gerenciar_lojas || req.body.perm_relatorios || 
+
+    const temAcessoPainel = pode_acessar_painel ||
+      req.body.perm_dashboard || req.body.perm_criar_tarefas ||
+      req.body.perm_conferir || req.body.perm_gerenciar_equipe ||
+      req.body.perm_gerenciar_lojas || req.body.perm_relatorios ||
       req.body.perm_configuracoes
 
     const result = await run(
-      `INSERT INTO perfis (nome, rotulo, loja_id, metodo_login, pode_acessar_painel, cor, ordem,
-        ${PERM_COLS.join(', ')}) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ${PERM_COLS.map(() => '?').join(', ')})`,
+      `INSERT INTO perfis (nome, rotulo, loja_id, admin_id, metodo_login, pode_acessar_painel, cor, ordem,
+        ${PERM_COLS.join(', ')})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ${PERM_COLS.map(() => '?').join(', ')})`,
       [
-        slug, rotulo.trim(), loja_id || null,
+        slug, rotulo.trim(), loja_id || null, adminId,
         metodo_login || 'pin', temAcessoPainel ? 1 : 0,
         cor || '#3483fa', proximaOrdem,
         ...permValues
       ]
     )
 
+    await seedMatrizPermissoes(result.lastID, permValues)
+    await registrarAuditoria(req, { acao: 'criar', entidade: 'perfil', entidade_id: result.lastID, detalhes: { rotulo: rotulo.trim() } })
     res.json({ id: result.lastID, nome: slug, message: 'Cargo criado!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -117,6 +199,8 @@ exports.atualizar = async (req, res) => {
         `UPDATE perfis SET rotulo = ?, cor = ?, pode_acessar_painel = ?, ${permUpdate} WHERE id = ?`,
         [rotulo || perfil[0].rotulo, cor || perfil[0].cor, temAcessoPainel ? 1 : 0, ...permValues, id]
       )
+      await sincronizarMatrizPermissoes(id, permValues)
+      await registrarAuditoria(req, { acao: 'editar', entidade: 'perfil', entidade_id: id })
       return res.json({ message: 'Perfil atualizado!' })
     }
 
@@ -131,6 +215,8 @@ exports.atualizar = async (req, res) => {
         ...permValues, id
       ]
     )
+    await sincronizarMatrizPermissoes(id, permValues)
+    await registrarAuditoria(req, { acao: 'editar', entidade: 'perfil', entidade_id: id })
     res.json({ message: 'Perfil atualizado!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -166,6 +252,7 @@ exports.deletar = async (req, res) => {
     }
 
     await run('UPDATE perfis SET ativo = 0 WHERE id = ?', [id])
+    await registrarAuditoria(req, { acao: 'arquivar', entidade: 'perfil', entidade_id: id })
     res.json({ message: 'Perfil excluido!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })

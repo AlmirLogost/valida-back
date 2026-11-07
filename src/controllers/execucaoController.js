@@ -1,5 +1,5 @@
 const { query, run } = require('../config/database')
-const { getLojaIds, checklistPertenceAConta, lojaPertenceAConta } = require('../helpers/adminLojas')
+const { getLojaIds, getLojaIdsVisiveis, checklistPertenceAConta, lojaPertenceAConta } = require('../helpers/adminLojas')
 
 // Confere se uma execução (pela loja em que foi feita) pertence à conta do usuário logado
 async function execucaoPertenceAConta(execucaoId, userId, userPerfil) {
@@ -224,8 +224,9 @@ exports.listar = async (req, res) => {
       LEFT JOIN lojas l ON e.loja_id = l.id
       WHERE 1=1
     `
-    // Sempre restringe às lojas da conta de quem está logado (dono, gerente ou funcionário)
-    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+    // Dono vê as execuções de todas as lojas da conta; qualquer outro
+    // perfil só vê as das unidades vinculadas a ele.
+    const lojaIds = await getLojaIdsVisiveis(req.userId, req.userPerfil)
     sql += ' AND e.loja_id = ANY(?)'
     const params = [lojaIds]
 
@@ -249,7 +250,7 @@ exports.dashboard = async (req, res) => {
     const { loja_id, data_inicio, data_fim, setor, usuario_id, momento } = req.query
     
     let where = 'WHERE 1=1'
-    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+    const lojaIds = await getLojaIdsVisiveis(req.userId, req.userPerfil)
     where += ' AND e.loja_id = ANY(?)'
     const params = [lojaIds]
 

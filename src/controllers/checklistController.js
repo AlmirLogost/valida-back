@@ -1,8 +1,12 @@
 const { query, run } = require('../config/database')
-const { getLojaIds, checklistPertenceAConta } = require('../helpers/adminLojas')
+const { getLojaIds, getLojaIdsVisiveis, checklistPertenceAConta } = require('../helpers/adminLojas')
 exports.listar = async (req, res) => {
   try {
-    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+    // Dono vê as tarefas de todas as lojas da conta; qualquer outro perfil
+    // só vê as das unidades vinculadas a ele (usuario_lojas) — cobre quem
+    // tem mais de uma unidade também, o que a checagem antiga (só
+    // usuarios.loja_id) não cobria.
+    const lojaIds = await getLojaIdsVisiveis(req.userId, req.userPerfil)
     let sql = `
       SELECT c.*, u.nome as criador, l.nome as loja_nome
       FROM checklists c
@@ -11,13 +15,6 @@ exports.listar = async (req, res) => {
       WHERE c.ativo = 1 AND c.loja_id = ANY(?)
     `
     const params = [lojaIds]
-    if (req.userPerfil !== 'super_admin') {
-      const user = await query('SELECT loja_id FROM usuarios WHERE id = ?', [req.userId])
-      if (user[0]?.loja_id) {
-        sql += ' AND c.loja_id = ?'
-        params.push(user[0].loja_id)
-      }
-    }
     sql += ' ORDER BY c.criado_em DESC'
     const checklists = await query(sql, params)
     res.json(checklists)

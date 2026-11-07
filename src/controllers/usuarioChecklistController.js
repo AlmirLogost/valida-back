@@ -1,5 +1,5 @@
 const { query, run } = require('../config/database')
-const { getLojaIds, lojaPertenceAConta, checklistPertenceAConta, usuarioPertenceAConta, vinculoPertenceAConta } = require('../helpers/adminLojas')
+const { getLojaIds, getLojaIdsVisiveis, lojaPertenceAConta, checklistPertenceAConta, usuarioPertenceAConta, vinculoPertenceAConta } = require('../helpers/adminLojas')
 
 exports.listarChecklists = async (req, res) => {
   try {
@@ -152,7 +152,7 @@ exports.salvarOverrides = async (req, res) => {
 
 exports.listarTodos = async (req, res) => {
   try {
-    const lojaIds = await getLojaIds(req.userId, req.userPerfil)
+    const lojaIds = await getLojaIdsVisiveis(req.userId, req.userPerfil)
     const vinculos = await query(`
       SELECT uc.*,
         u.nome as usuario_nome,
