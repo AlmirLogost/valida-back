@@ -6,9 +6,9 @@ const { requirePlanoAtivo, checkLimite, bloquearEscritaSeSomenteLeitura } = requ
 
 router.get('/checklists', auth, checklistController.listar)
 router.post('/checklists', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, checkLimite('tarefas'), checklistController.criar)
-router.put('/checklists/:id', auth, checklistController.atualizar)
-router.delete('/checklists/:id', auth, checklistController.deletar)
-router.patch('/checklists/:id/toggle', auth, checklistController.toggleStatus)
-router.patch('/checklists/:id/pausar', auth, checklistController.togglePausado)
+router.put('/checklists/:id', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, checklistController.atualizar)
+router.delete('/checklists/:id', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, checklistController.deletar)
+router.patch('/checklists/:id/toggle', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, checklistController.toggleStatus)
+router.patch('/checklists/:id/pausar', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, checklistController.togglePausado)
 
 module.exports = router

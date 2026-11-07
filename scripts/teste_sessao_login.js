@@ -123,25 +123,25 @@ async function main() {
     else falhou('GET /execucoes funciona com trial vencido (somente leitura)', JSON.stringify(lstExec))
 
     const criaLoja = await chamar('POST', '/lojas', tokenOriginal, { nome: `${PREFIXO}Loja Nova` })
-    if (criaLoja.status === 403 && /período de teste acabou/.test(criaLoja.body?.erro || '')) {
+    if (criaLoja.status === 403 && /modo somente leitura/.test(criaLoja.body?.erro || '')) {
       ok('POST /lojas bloqueado com mensagem clara (trial vencido)')
     } else {
       falhou('POST /lojas bloqueado com mensagem clara (trial vencido)', JSON.stringify(criaLoja))
     }
 
     const criaChecklist = await chamar('POST', '/checklists', tokenOriginal, { titulo: 'x', loja_id: lojaTrialVencido.lastID, recorrencia: 'diario' })
-    if (criaChecklist.status === 403 && /período de teste acabou/.test(criaChecklist.body?.erro || '')) {
+    if (criaChecklist.status === 403 && /modo somente leitura/.test(criaChecklist.body?.erro || '')) {
       ok('POST /checklists bloqueado com mensagem clara (trial vencido)')
     } else {
       falhou('POST /checklists bloqueado com mensagem clara (trial vencido)', JSON.stringify(criaChecklist))
     }
 
-    console.log('-- suspenso: continua bloqueado em tudo (sem mudança de comportamento) --')
+    console.log('-- suspenso: lê normal, mas não cria (modo somente leitura desde a 1.6) --')
     const loginSuspenso = await chamar('POST', '/login', null, { email: `${PREFIXO}suspenso@teste.local`, senha: 'teste123' })
     const tokenSuspenso = loginSuspenso.body?.token
     const lstExecSuspenso = await chamar('GET', '/execucoes', tokenSuspenso)
-    if (lstExecSuspenso.status === 402) ok('GET /execucoes bloqueado (402) pra conta suspensa, como antes')
-    else falhou('GET /execucoes bloqueado (402) pra conta suspensa, como antes', JSON.stringify(lstExecSuspenso))
+    if (lstExecSuspenso.status === 200) ok('GET /execucoes funciona com conta suspensa (somente leitura, não 402 total)')
+    else falhou('GET /execucoes funciona com conta suspensa (somente leitura, não 402 total)', JSON.stringify(lstExecSuspenso))
 
     console.log('')
     if (falhas === 0) console.log('✅ Todos os testes passaram — sessão, renovação e modo somente leitura funcionam.')

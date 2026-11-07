@@ -48,6 +48,7 @@ async function limpar() {
   await run('DELETE FROM template_itens WHERE template_id IN (SELECT id FROM templates WHERE titulo LIKE ?)', [`${PREFIXO}%`])
   await run('DELETE FROM templates WHERE titulo LIKE ?', [`${PREFIXO}%`])
   await run('DELETE FROM perfis WHERE rotulo LIKE ?', [`${PREFIXO}%`])
+  await run('DELETE FROM subscriptions WHERE admin_id IN (SELECT id FROM usuarios WHERE email LIKE ?)', [`${PREFIXO}%`])
   await run('DELETE FROM usuarios WHERE email LIKE ?', [`${PREFIXO}%`])
   await run('DELETE FROM lojas WHERE nome LIKE ?', [`${PREFIXO}%`])
 }
@@ -135,6 +136,15 @@ async function main() {
 
     // Template é global (não pertence a conta nenhuma)
     const template = await run(`INSERT INTO templates (titulo) VALUES (?)`, [`${PREFIXO}Template`])
+
+    // Desde a 1.6, várias rotas de escrita passaram a exigir requirePlanoAtivo
+    // (pra saber se a conta está em modo somente leitura) — sem uma
+    // subscription, essas rotas dão 402 "Sem assinatura ativa", mascarando
+    // os testes de isolamento entre contas. Dá uma assinatura ativa pra A e B.
+    const [planoProf] = await query("SELECT id FROM planos WHERE slug = 'profissional' LIMIT 1")
+    const trialEmDia = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    await run('INSERT INTO subscriptions (admin_id, plano_id, status, trial_fim) VALUES (?, ?, ?, ?)', [donoA.lastID, planoProf.id, 'trial', trialEmDia])
+    await run('INSERT INTO subscriptions (admin_id, plano_id, status, trial_fim) VALUES (?, ?, ?, ?)', [donoB.lastID, planoProf.id, 'trial', trialEmDia])
 
     // Execução da Tarefa B, para testar as rotas de execução (1.1c)
     const execB = await run(

@@ -17,11 +17,11 @@ async function getSubscription(adminId) {
   return rows[0] ?? null
 }
 
-// Bloqueia com 402 se suspenso/cancelado. Trial vencido NÃO bloqueia mais
-// (1.5) — o dono continua entrando e vendo os dados, só marca req.somenteLeitura
-// pra quem quiser recusar uma ação de escrita específica (ver
-// bloquearEscritaSeSomenteLeitura abaixo). Bloquear tudo (como era antes)
-// assustava o cliente logo que o trial vencia.
+// Nunca bloqueia a LEITURA. Trial vencido, conta suspensa ou cancelada só
+// marcam req.somenteLeitura — quem quiser recusar uma ação de ESCRITA usa
+// bloquearEscritaSeSomenteLeitura depois deste middleware (1.6). Login, ler
+// dados e a tela "Meu plano" continuam funcionando sempre; bloquear tudo
+// (como era antes da 1.5) assustava o cliente.
 const requirePlanoAtivo = async (req, res, next) => {
   try {
     const adminId = await getAdminId(req.userId, req.userPerfil)
@@ -30,14 +30,11 @@ const requirePlanoAtivo = async (req, res, next) => {
     const sub = await getSubscription(adminId)
     if (!sub) return res.status(402).json({ erro: 'Sem assinatura ativa.' })
 
-    if (sub.status === 'suspenso' || sub.status === 'cancelado') {
-      return res.status(402).json({ erro: 'Assinatura suspensa ou cancelada.', status: sub.status })
-    }
-
     req.adminId = adminId
     req.subscription = sub
 
-    if (sub.status === 'trial' && sub.trial_fim && new Date(sub.trial_fim) < new Date()) {
+    const trialVencido = sub.status === 'trial' && sub.trial_fim && new Date(sub.trial_fim) < new Date()
+    if (trialVencido || sub.status === 'suspenso' || sub.status === 'cancelado') {
       req.somenteLeitura = true
     }
 
@@ -47,14 +44,19 @@ const requirePlanoAtivo = async (req, res, next) => {
   }
 }
 
-// Usar DEPOIS de requirePlanoAtivo, só nas rotas que CRIAM/ALTERAM dados.
-// Se o trial venceu, recusa a escrita com mensagem clara (a leitura continua
-// liberada por requirePlanoAtivo sozinho).
+// Usar DEPOIS de requirePlanoAtivo, só nas rotas que CRIAM/ALTERAM/APAGAM
+// dados (POST, PUT, PATCH, DELETE). Se a conta está em modo somente leitura
+// (trial vencido, suspensa ou cancelada), recusa com mensagem clara — a
+// leitura continua liberada por requirePlanoAtivo sozinho.
 const bloquearEscritaSeSomenteLeitura = (req, res, next) => {
   if (req.somenteLeitura) {
+    const status = req.subscription?.status
+    let acao = 'Assine um plano'
+    if (status === 'suspenso') acao = 'Regularize o pagamento'
+    else if (status === 'cancelado') acao = 'Reative sua assinatura'
     return res.status(403).json({
-      erro: 'Seu período de teste acabou. Assine um plano para continuar criando e editando — os dados continuam aí, só a visualização está liberada.',
-      status: 'trial_expirado'
+      erro: `Sua conta está em modo somente leitura. ${acao} para continuar criando e editando — seus dados continuam aí, só a edição está bloqueada.`,
+      status: status === 'trial' ? 'trial_expirado' : status
     })
   }
   next()
