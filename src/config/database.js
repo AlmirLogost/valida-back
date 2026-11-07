@@ -114,6 +114,7 @@ const createTables = async () => {
       rotulo TEXT NOT NULL,
       loja_id INTEGER,
       admin_id INTEGER,
+      escopo TEXT NOT NULL DEFAULT 'propria_unidade',
       metodo_login TEXT DEFAULT 'pin',
       pode_acessar_painel INTEGER DEFAULT 0,
       cor TEXT DEFAULT '#3483fa',
@@ -344,6 +345,17 @@ const createTables = async () => {
       acao TEXT NOT NULL,
       permitido INTEGER NOT NULL DEFAULT 0,
       UNIQUE (perfil_id, modulo, acao)
+    )
+  `)
+
+  // Reforma de Acessos: alcance do cargo em unidades escolhidas (migration 012)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS perfil_lojas (
+      id SERIAL PRIMARY KEY,
+      perfil_id INTEGER NOT NULL REFERENCES perfis(id) ON DELETE CASCADE,
+      loja_id INTEGER NOT NULL REFERENCES lojas(id) ON DELETE CASCADE,
+      criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (perfil_id, loja_id)
     )
   `)
 

@@ -79,6 +79,10 @@ async function login(email) {
 
 async function main() {
   let child
+  // Cargos criados por "duplicar" não têm um rótulo com o PREFIXO (o nome
+  // vem do cargo original + " (cópia)") — guardamos o(s) ID(s) aqui pra
+  // apagar explicitamente no final, sem depender de LIKE no rótulo.
+  const idsCargosExtras = []
   try {
     await limpar()
     const hash = await bcrypt.hash('teste123', 10)
@@ -123,6 +127,7 @@ async function main() {
     const perfis = await chamar('GET', '/perfis', tokenDono)
     const operadorSistema = perfis.body.find(p => p.nome === 'operador' && p.sistema === 1)
     const duplicado = await chamar('POST', `/perfis/${operadorSistema.id}/duplicar`, tokenDono)
+    if (duplicado.body?.id) idsCargosExtras.push(duplicado.body.id)
     if (duplicado.status === 200 && duplicado.body?.id) {
       ok('duplicar o cargo "Operador" (sistema) cria um cargo novo e personalizado')
     } else {
@@ -256,6 +261,46 @@ async function main() {
       falhou('gerente vinculado a duas unidades', JSON.stringify(idsVinculados))
     }
 
+    console.log('-- alcance do cargo: "unidades escolhidas" vale mais que a unidade da pessoa --')
+    const cargoAlcance = await run(
+      `INSERT INTO perfis (nome, rotulo, admin_id, metodo_login, sistema, ordem) VALUES (?, ?, ?, 'pin', 0, 95)`,
+      [`${PREFIXO.toLowerCase()}supervisor`, `${PREFIXO}Supervisor`, dono.lastID]
+    )
+    await run('INSERT INTO perfil_permissoes (perfil_id, modulo, acao, permitido) VALUES (?, ?, ?, 1)', [cargoAlcance.lastID, 'unidades', 'ver'])
+    const salvaAlcance = await chamar('PUT', `/perfis/${cargoAlcance.lastID}/permissoes`, tokenDono, {
+      escopo: 'unidades_escolhidas', loja_ids: [lojaB.lastID]
+    })
+    if (salvaAlcance.status === 200) ok('salvar alcance "unidades escolhidas" (Loja B) funciona')
+    else falhou('salvar alcance', JSON.stringify(salvaAlcance))
+
+    const leAlcance = await chamar('GET', `/perfis/${cargoAlcance.lastID}/permissoes`, tokenDono)
+    if (leAlcance.body?.escopo === 'unidades_escolhidas' && leAlcance.body?.loja_ids?.includes(lojaB.lastID)) {
+      ok('GET devolve o alcance e a unidade escolhida salvos')
+    } else {
+      falhou('GET devolve o alcance salvo', JSON.stringify(leAlcance.body))
+    }
+
+    // Pessoa com esse cargo, vinculada (usuario_lojas) só à Loja A — mas o
+    // CARGO diz "Loja B" — o alcance do cargo deve prevalecer.
+    const pessoaSupervisor = await run(
+      `INSERT INTO usuarios (nome, email, senha, perfil, loja_id) VALUES (?, ?, ?, ?, ?)`,
+      [`${PREFIXO}Pessoa Supervisor`, `${PREFIXO}pessoasupervisor@teste.local`, hash, `${PREFIXO.toLowerCase()}supervisor`, lojaA.lastID]
+    )
+    await run('INSERT INTO usuario_lojas (usuario_id, loja_id) VALUES (?, ?)', [pessoaSupervisor.lastID, lojaA.lastID])
+    const tokenSupervisor = await login(`${PREFIXO}pessoasupervisor@teste.local`)
+    const lojasVisiveisSupervisor = await chamar('GET', '/lojas', tokenSupervisor)
+    const nomesVisiveis = (lojasVisiveisSupervisor.body || []).map(l => l.nome)
+    if (nomesVisiveis.includes(`${PREFIXO}Loja B`) && !nomesVisiveis.includes(`${PREFIXO}Loja A`)) {
+      ok('pessoa com cargo "unidades escolhidas" vê a Loja B (do cargo), não a Loja A (da própria pessoa)')
+    } else {
+      falhou('alcance do cargo prevalece sobre a unidade da pessoa', JSON.stringify(nomesVisiveis))
+    }
+    await run('DELETE FROM usuario_lojas WHERE usuario_id = ?', [pessoaSupervisor.lastID])
+    await run('DELETE FROM usuarios WHERE id = ?', [pessoaSupervisor.lastID])
+    await run('DELETE FROM perfil_lojas WHERE perfil_id = ?', [cargoAlcance.lastID])
+    await run('DELETE FROM perfil_permissoes WHERE perfil_id = ?', [cargoAlcance.lastID])
+    await run('DELETE FROM perfis WHERE id = ?', [cargoAlcance.lastID])
+
     console.log('')
     if (falhas === 0) console.log('✅ Todos os testes passaram — API de Acessos e Unidades funciona.')
     else console.log(`❌ ${falhas} teste(s) falharam.`)
@@ -264,6 +309,10 @@ async function main() {
     console.error('\n❌ Erro ao rodar o teste:', e.message)
   } finally {
     if (child) child.kill()
+    for (const id of idsCargosExtras) {
+      await run('DELETE FROM perfil_permissoes WHERE perfil_id = ?', [id])
+      await run('DELETE FROM perfis WHERE id = ?', [id])
+    }
     await limpar()
     await pool.end()
   }

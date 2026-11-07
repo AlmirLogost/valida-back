@@ -1,4 +1,4 @@
-const { query } = require('../config/database')
+const { query, run } = require('../config/database')
 
 // ============================================================================
 // Resolução única de "a qual conta pertence este usuário e quais lojas ele
@@ -37,12 +37,26 @@ async function getLojaIds(userId, userPerfil) {
 // respeitar (ex.: gerente da unidade A não deve ver a unidade B na lista,
 // mesmo sendo da mesma conta).
 //
-// Dono (super_admin) sempre vê todas as lojas da conta. Qualquer outro
-// perfil vê só as lojas vinculadas a ele em usuario_lojas; se ainda não
-// tiver nenhum vínculo lá (conta criada antes da migration 008 rodar, caso
-// raro), cai pra usuarios.loja_id, pra nunca ficar sem ver a própria loja.
+// Dono (super_admin) sempre vê todas as lojas da conta. Pra qualquer outro
+// perfil, o ALCANCE do cargo (migration 012) decide: "todas" vê a conta
+// inteira igual ao dono; "unidades_escolhidas" vê só a lista fixa definida
+// no cargo (perfil_lojas), não importa quem está logado; "propria_unidade"
+// (padrão, igual já era antes do alcance existir) vê só as lojas vinculadas
+// à PESSOA em usuario_lojas — se ainda não tiver nenhum vínculo lá (conta
+// criada antes da migration 008 rodar, caso raro), cai pra usuarios.loja_id,
+// pra nunca ficar sem ver a própria loja.
 async function getLojaIdsVisiveis(userId, userPerfil) {
   if (userPerfil === 'super_admin') return getLojaIds(userId, userPerfil)
+
+  const adminId = await getAdminId(userId, userPerfil)
+  const perfil = adminId ? await resolverPerfilPorNome(userPerfil, adminId) : null
+
+  if (perfil?.escopo === 'todas') return getLojaIds(userId, userPerfil)
+  if (perfil?.escopo === 'unidades_escolhidas') {
+    const rows = await query('SELECT loja_id FROM perfil_lojas WHERE perfil_id = ?', [perfil.id])
+    return rows.map(r => r.loja_id)
+  }
+
   const vinculos = await query('SELECT loja_id FROM usuario_lojas WHERE usuario_id = ?', [userId])
   if (vinculos.length > 0) return vinculos.map(v => v.loja_id)
   const rows = await query('SELECT loja_id FROM usuarios WHERE id = ?', [userId])
@@ -123,8 +137,21 @@ async function perfilPertenceAConta(perfilId, userId, userPerfil) {
     const adminId = await getAdminId(userId, userPerfil)
     return !!adminId && adminId === rows[0].admin_id
   }
-  if (!rows[0].loja_id) return false
-  return lojaPertenceAConta(rows[0].loja_id, userId, userPerfil)
+  if (rows[0].loja_id) return lojaPertenceAConta(rows[0].loja_id, userId, userPerfil)
+  // Cargo órfão (sem admin_id e sem loja_id) — não deveria existir com o
+  // código atual (criar/duplicar sempre preenche admin_id), mas um
+  // servidor rodando código antigo pode ter criado um assim. Regra geral:
+  // o Dono nunca pode ficar travado na própria conta. Em vez de só negar
+  // (deixando o cargo pra sempre inacessível, nem pelo dono que o criou),
+  // o Dono que tentar abrir "adota" o cargo pra própria conta de uma vez.
+  if (userPerfil === 'super_admin') {
+    const adminId = await getAdminId(userId, userPerfil)
+    if (adminId) {
+      await run('UPDATE perfis SET admin_id = ? WHERE id = ? AND admin_id IS NULL', [adminId, perfilId])
+      return true
+    }
+  }
+  return false
 }
 
 // Resolve a linha de "perfis" certa a partir do NOME do cargo + a conta —

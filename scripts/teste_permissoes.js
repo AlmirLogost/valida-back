@@ -214,6 +214,27 @@ async function main() {
     if (vePermitido.status === 200) ok('usuário sem "unidades.editar" ainda consegue VER as unidades (tem "unidades.ver")')
     else falhou('usuário sem "unidades.editar" ainda consegue ver', JSON.stringify(vePermitido))
 
+    console.log('-- regra geral: Dono nunca fica travado, mesmo num cargo com dados órfãos --')
+    // Simula um cargo criado por um código antigo (sem admin_id) — não
+    // deveria acontecer com o código atual, mas um servidor rodando
+    // versão antiga pode ter deixado algum assim.
+    const cargoOrfao = await run(
+      `INSERT INTO perfis (nome, rotulo, admin_id, loja_id, metodo_login, sistema, ordem) VALUES (?, ?, NULL, NULL, 'pin', 0, 90)`,
+      [`${PREFIXO.toLowerCase()}orfao`, `${PREFIXO}Orfao`]
+    )
+    const abreOrfaoAntes = await chamar('GET', `/perfis/${cargoOrfao.lastID}/permissoes`, tokenDonoA)
+    if (abreOrfaoAntes.status === 200) {
+      ok('Dono consegue abrir um cargo órfão (sem admin_id) na primeira tentativa — e ele se corrige')
+    } else {
+      falhou('Dono deveria conseguir abrir cargo órfão (regra geral: nunca travado)', JSON.stringify(abreOrfaoAntes))
+    }
+    const orfaoCorrigido = await query('SELECT admin_id FROM perfis WHERE id = ?', [cargoOrfao.lastID])
+    if (orfaoCorrigido[0]?.admin_id === donoA.lastID) {
+      ok('o cargo órfão foi adotado pela conta do Dono que o abriu (corrigido de vez)')
+    } else {
+      falhou('cargo órfão deveria ter sido corrigido com o admin_id do Dono', JSON.stringify(orfaoCorrigido))
+    }
+
     console.log('-- ação importante (criar loja) fica registrada na auditoria --')
     const criaLojaDono = await chamar('POST', '/lojas', tokenDonoA, { nome: `${PREFIXO}Loja Auditada` })
     const auditoria = await query(

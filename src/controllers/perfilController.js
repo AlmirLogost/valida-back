@@ -103,6 +103,19 @@ exports.listar = async (req, res) => {
     }
     sql += ' ORDER BY ordem ASC, rotulo ASC'
     const perfis = await query(sql, params)
+
+    // "X pessoas usam este cargo" (Fase 3, item 1) — só dentro da própria
+    // conta, mesmo pra cargo de sistema (nome "operador" de uma conta não
+    // deve contar gente de outra conta).
+    for (const p of perfis) {
+      if (p.nome === 'super_admin') { p.usuarios_count = 1; continue }
+      const contagem = await query(
+        'SELECT COUNT(*) AS total FROM usuarios WHERE perfil = ? AND ativo = 1 AND loja_id = ANY(?)',
+        [p.nome, lojaIds]
+      )
+      p.usuarios_count = Number(contagem[0]?.total || 0)
+    }
+
     res.json(perfis)
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -323,11 +336,11 @@ exports.duplicar = async (req, res) => {
     const proximaOrdem = (maxOrdem[0]?.max || 0) + 1
 
     const novo = await run(
-      `INSERT INTO perfis (nome, rotulo, admin_id, metodo_login, pode_acessar_painel, cor, ordem, sistema,
+      `INSERT INTO perfis (nome, rotulo, admin_id, metodo_login, pode_acessar_painel, cor, ordem, sistema, escopo,
         ${PERM_COLS.join(', ')})
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ${PERM_COLS.map(() => '?').join(', ')})`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ${PERM_COLS.map(() => '?').join(', ')})`,
       [
-        slug, rotulo, adminId, p.metodo_login, p.pode_acessar_painel, p.cor, proximaOrdem,
+        slug, rotulo, adminId, p.metodo_login, p.pode_acessar_painel, p.cor, proximaOrdem, p.escopo || 'propria_unidade',
         ...PERM_COLS.map(col => p[col])
       ]
     )
@@ -338,6 +351,13 @@ exports.duplicar = async (req, res) => {
         'INSERT INTO perfil_permissoes (perfil_id, modulo, acao, permitido) VALUES (?, ?, ?, ?) ON CONFLICT (perfil_id, modulo, acao) DO NOTHING',
         [novo.lastID, linha.modulo, linha.acao, linha.permitido]
       )
+    }
+
+    // Se o cargo original tinha alcance "unidades escolhidas", a cópia
+    // começa com a mesma lista (o dono pode ajustar depois).
+    const lojasEscolhidasOrigem = await query('SELECT loja_id FROM perfil_lojas WHERE perfil_id = ?', [id])
+    for (const l of lojasEscolhidasOrigem) {
+      await run('INSERT INTO perfil_lojas (perfil_id, loja_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [novo.lastID, l.loja_id])
     }
 
     await registrarAuditoria(req, { acao: 'criar', entidade: 'perfil', entidade_id: novo.lastID, detalhes: { duplicado_de: Number(id), rotulo } })
@@ -357,19 +377,28 @@ exports.obterPermissoes = async (req, res) => {
     if (!(await perfilPertenceAConta(id, req.userId, req.userPerfil))) {
       return res.status(404).json({ erro: 'Perfil nao encontrado' })
     }
+    const perfil = await query('SELECT escopo FROM perfis WHERE id = ?', [id])
     const linhas = await query('SELECT modulo, acao, permitido FROM perfil_permissoes WHERE perfil_id = ?', [id])
-    res.json({ modulos: MODULOS_ACOES, permissoes: linhas.map(l => ({ modulo: l.modulo, acao: l.acao, permitido: l.permitido === 1 })) })
+    const lojasEscolhidas = await query('SELECT loja_id FROM perfil_lojas WHERE perfil_id = ?', [id])
+    res.json({
+      modulos: MODULOS_ACOES,
+      permissoes: linhas.map(l => ({ modulo: l.modulo, acao: l.acao, permitido: l.permitido === 1 })),
+      escopo: perfil[0]?.escopo || 'propria_unidade',
+      loja_ids: lojasEscolhidas.map(l => l.loja_id)
+    })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
   }
 }
 
+const ESCOPOS_VALIDOS = ['propria_unidade', 'unidades_escolhidas', 'todas']
+
 exports.salvarPermissoes = async (req, res) => {
   try {
     const { id } = req.params
-    const { permissoes } = req.body
+    const { permissoes, escopo, loja_ids } = req.body
 
-    const { perfilPertenceAConta } = require('../helpers/adminLojas')
+    const { perfilPertenceAConta, lojaPertenceAConta } = require('../helpers/adminLojas')
     if (!(await perfilPertenceAConta(id, req.userId, req.userPerfil))) {
       return res.status(404).json({ erro: 'Perfil nao encontrado' })
     }
@@ -378,11 +407,11 @@ exports.salvarPermissoes = async (req, res) => {
     if (perfil[0].sistema) {
       return res.status(403).json({ erro: 'Cargos do sistema não podem ter a matriz editada — duplique o cargo para criar uma versão própria.' })
     }
-    if (!Array.isArray(permissoes)) {
+    if (permissoes !== undefined && !Array.isArray(permissoes)) {
       return res.status(400).json({ erro: 'Envie a lista de permissões.' })
     }
 
-    for (const item of permissoes) {
+    for (const item of (permissoes || [])) {
       const acoesValidas = MODULOS_ACOES[item?.modulo]
       if (!acoesValidas || !acoesValidas.includes(item?.acao)) {
         return res.status(400).json({ erro: `Módulo/ação inválido: ${item?.modulo}.${item?.acao}` })
@@ -392,6 +421,33 @@ exports.salvarPermissoes = async (req, res) => {
          ON CONFLICT (perfil_id, modulo, acao) DO UPDATE SET permitido = EXCLUDED.permitido`,
         [id, item.modulo, item.acao, item.permitido ? 1 : 0]
       )
+    }
+
+    // Alcance do cargo (Fase 3, item 1): própria unidade (padrão) / unidades
+    // escolhidas (lista fixa) / todas as unidades da conta.
+    if (escopo !== undefined) {
+      if (!ESCOPOS_VALIDOS.includes(escopo)) {
+        return res.status(400).json({ erro: `Alcance inválido: ${escopo}` })
+      }
+      await run('UPDATE perfis SET escopo = ? WHERE id = ?', [escopo, id])
+      if (escopo === 'unidades_escolhidas') {
+        if (!Array.isArray(loja_ids)) {
+          return res.status(400).json({ erro: 'Escolha pelo menos uma unidade para esse alcance.' })
+        }
+        for (const lojaId of loja_ids) {
+          if (!(await lojaPertenceAConta(lojaId, req.userId, req.userPerfil))) {
+            return res.status(404).json({ erro: 'Unidade não encontrada' })
+          }
+        }
+        await run('DELETE FROM perfil_lojas WHERE perfil_id = ?', [id])
+        for (const lojaId of loja_ids) {
+          await run('INSERT INTO perfil_lojas (perfil_id, loja_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [id, lojaId])
+        }
+      } else {
+        // "propria_unidade" ou "todas" não usam lista fixa — limpa qualquer
+        // seleção anterior pra não sobrar lixo se o dono trocar de alcance.
+        await run('DELETE FROM perfil_lojas WHERE perfil_id = ?', [id])
+      }
     }
 
     await registrarAuditoria(req, { acao: 'editar', entidade: 'perfil_permissoes', entidade_id: id })
