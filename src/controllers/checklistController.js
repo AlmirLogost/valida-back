@@ -29,20 +29,21 @@ exports.criar = async (req, res) => {
     if (!b.loja_id || !lojaIds.includes(parseInt(b.loja_id))) {
       return res.status(404).json({ erro: 'Loja não encontrada' })
     }
+    const tipoTarefa = b.tipo === 'lider' ? 'lider' : 'operador'
     const result = await run(
-      `INSERT INTO checklists (titulo, descricao, categoria, loja_id, criado_por, 
+      `INSERT INTO checklists (titulo, descricao, categoria, loja_id, criado_por,
        horario_inicio, horario_fim, recorrencia, data_mensal, data_pontual, dias_semana, momento,
        tipo_campo, evidencia_obrigatoria, tipo_evidencia, critico,
        subtipo_numerico, peso, rotulo_positivo, rotulo_negativo,
-       data_inicio, data_termino, repeticao_intervalo, tolerancia_min) 
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [b.titulo, b.descricao, b.categoria, b.loja_id||null, req.userId, 
+       data_inicio, data_termino, repeticao_intervalo, tolerancia_min, tipo)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [b.titulo, b.descricao, b.categoria, b.loja_id||null, req.userId,
        b.horario_inicio, b.horario_fim, b.recorrencia,
        b.data_mensal||null, b.data_pontual||null, b.dias_semana||null, b.momento||'outros',
        b.tipo_campo||'boolean', b.evidencia_obrigatoria||0, b.tipo_evidencia||'imagem',
        b.critico||0, b.subtipo_numerico||'inteiro', b.peso||1,
        b.rotulo_positivo||'Feito', b.rotulo_negativo||'Nao Feito',
-       b.data_inicio||null, b.data_termino||null, b.repeticao_intervalo||1, b.tolerancia_min||30]
+       b.data_inicio||null, b.data_termino||null, b.repeticao_intervalo||1, b.tolerancia_min||30, tipoTarefa]
     )
     res.json({ id: result.lastID, message: 'Checklist criado!' })
   } catch (erro) {
@@ -62,20 +63,25 @@ exports.atualizar = async (req, res) => {
         return res.status(404).json({ erro: 'Loja não encontrada' })
       }
     }
-    await run(
-      `UPDATE checklists SET titulo=?, descricao=?, categoria=?, loja_id=?,
-       horario_inicio=?, horario_fim=?, recorrencia=?, data_mensal=?, data_pontual=?, dias_semana=?, momento=?,
-       tipo_campo=?, evidencia_obrigatoria=?, tipo_evidencia=?, critico=?,
-       subtipo_numerico=?, peso=?, rotulo_positivo=?, rotulo_negativo=?,
-       data_inicio=?, data_termino=?, repeticao_intervalo=?, tolerancia_min=?
-       WHERE id=?`,
-      [b.titulo, b.descricao, b.categoria, b.loja_id, b.horario_inicio, b.horario_fim, 
+    const campos = ['titulo=?', 'descricao=?', 'categoria=?', 'loja_id=?',
+       'horario_inicio=?', 'horario_fim=?', 'recorrencia=?', 'data_mensal=?', 'data_pontual=?', 'dias_semana=?', 'momento=?',
+       'tipo_campo=?', 'evidencia_obrigatoria=?', 'tipo_evidencia=?', 'critico=?',
+       'subtipo_numerico=?', 'peso=?', 'rotulo_positivo=?', 'rotulo_negativo=?',
+       'data_inicio=?', 'data_termino=?', 'repeticao_intervalo=?', 'tolerancia_min=?']
+    const valores = [b.titulo, b.descricao, b.categoria, b.loja_id, b.horario_inicio, b.horario_fim,
        b.recorrencia, b.data_mensal||null, b.data_pontual||null, b.dias_semana||null, b.momento||'outros',
        b.tipo_campo||'boolean', b.evidencia_obrigatoria||0, b.tipo_evidencia||'imagem',
        b.critico||0, b.subtipo_numerico||'inteiro', b.peso||1,
        b.rotulo_positivo||'Feito', b.rotulo_negativo||'Nao Feito',
-       b.data_inicio||null, b.data_termino||null, b.repeticao_intervalo||1, b.tolerancia_min||30, id]
-    )
+       b.data_inicio||null, b.data_termino||null, b.repeticao_intervalo||1, b.tolerancia_min||30]
+    // tipo (líder/operador) só é alterado se vier no corpo — editar outro
+    // campo da tarefa não deve mudar a aba em que ela aparece por acidente.
+    if (b.tipo === 'lider' || b.tipo === 'operador') {
+      campos.push('tipo=?')
+      valores.push(b.tipo)
+    }
+    valores.push(id)
+    await run(`UPDATE checklists SET ${campos.join(', ')} WHERE id=?`, valores)
     res.json({ id: parseInt(id), message: 'Checklist atualizado!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })

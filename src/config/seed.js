@@ -26,14 +26,17 @@ const seedDatabase = async () => {
       `INSERT INTO perfis (nome, rotulo, metodo_login, pode_acessar_painel, cor, sistema, ordem,
         perm_dashboard, perm_criar_tarefas, perm_executar_tarefas, perm_conferir,
         perm_gerenciar_equipe, perm_gerenciar_lojas, perm_relatorios, perm_configuracoes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 0, 1, 1, 0, 1, 0)`,
-      ['fiscal', 'Fiscal', 'pin', 1, '#3483fa', 1, 1]
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 1, 1, 1, 0, 1, 0)`,
+      ['fiscal', 'Líder', 'pin', 1, '#3483fa', 1, 1]
     )
   } else {
+    // "fiscal" é só o slug técnico (usuarios.perfil já guarda esse texto em
+    // produção, não pode mudar). O rótulo mostrado na tela é "Líder" desde
+    // a Fase 3 — mesmo princípio usado antes para super_admin -> "Dono".
     await run(
-      `UPDATE perfis SET perm_dashboard=1, perm_criar_tarefas=1, perm_executar_tarefas=0, perm_conferir=1,
+      `UPDATE perfis SET perm_dashboard=1, perm_criar_tarefas=1, perm_executar_tarefas=1, perm_conferir=1,
         perm_gerenciar_equipe=1, perm_gerenciar_lojas=0, perm_relatorios=1, perm_configuracoes=0,
-        ativo=1, metodo_login='pin'
+        rotulo='Líder', ativo=1, metodo_login='pin'
        WHERE nome = 'fiscal' AND sistema = 1`
     )
   }
@@ -89,6 +92,7 @@ const seedDatabase = async () => {
     UNION ALL SELECT id, 'tarefas', 'editar', perm_criar_tarefas FROM perfis WHERE sistema = 1
     UNION ALL SELECT id, 'tarefas', 'arquivar', perm_criar_tarefas FROM perfis WHERE sistema = 1
     UNION ALL SELECT id, 'tarefas', 'executar', perm_executar_tarefas FROM perfis WHERE sistema = 1
+    UNION ALL SELECT id, 'tarefas', 'conferir', perm_conferir FROM perfis WHERE sistema = 1
     UNION ALL SELECT id, 'unidades', 'ver', perm_gerenciar_lojas FROM perfis WHERE sistema = 1
     UNION ALL SELECT id, 'unidades', 'criar', perm_gerenciar_lojas FROM perfis WHERE sistema = 1
     UNION ALL SELECT id, 'unidades', 'editar', perm_gerenciar_lojas FROM perfis WHERE sistema = 1
@@ -115,7 +119,7 @@ const seedDatabase = async () => {
     FROM perfis p
     CROSS JOIN (VALUES
       ('painel','ver'),
-      ('tarefas','ver'),('tarefas','criar'),('tarefas','editar'),('tarefas','arquivar'),('tarefas','executar'),
+      ('tarefas','ver'),('tarefas','criar'),('tarefas','editar'),('tarefas','arquivar'),('tarefas','executar'),('tarefas','conferir'),
       ('unidades','ver'),('unidades','criar'),('unidades','editar'),('unidades','arquivar'),
       ('equipe','ver'),('equipe','criar'),('equipe','editar'),('equipe','arquivar'),
       ('relatorios','ver'),

@@ -291,7 +291,7 @@ exports.deletar = async (req, res) => {
 // e pra popular o editor de matriz no front.
 const MODULOS_ACOES = {
   painel: ['ver'],
-  tarefas: ['ver', 'criar', 'editar', 'arquivar', 'executar'],
+  tarefas: ['ver', 'criar', 'editar', 'arquivar', 'executar', 'conferir'],
   unidades: ['ver', 'criar', 'editar', 'arquivar'],
   equipe: ['ver', 'criar', 'editar', 'arquivar'],
   acessos: ['ver', 'criar', 'editar', 'arquivar'],

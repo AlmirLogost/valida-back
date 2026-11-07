@@ -354,3 +354,32 @@ exports.reverter = async (req, res) => {
     res.status(500).json({ erro: e.message })
   }
 }
+
+// Conferência (Fase 3, item 3): o Líder aprova ou reprova uma execução feita
+// por alguém da equipe. "Reabrir" continua sendo o reverter acima (já
+// existia para o próprio operador desfazer a própria tarefa).
+exports.aprovar = async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!(await execucaoPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Execução não encontrada' })
+    }
+    await run("UPDATE execucoes SET status_conferencia = 'aprovado' WHERE id = ?", [id])
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ erro: e.message })
+  }
+}
+
+exports.reprovar = async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!(await execucaoPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Execução não encontrada' })
+    }
+    await run("UPDATE execucoes SET status_conferencia = 'reprovado' WHERE id = ?", [id])
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ erro: e.message })
+  }
+}

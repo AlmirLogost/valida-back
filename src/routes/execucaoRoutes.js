@@ -25,6 +25,19 @@ router.post('/execucoes', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitu
 router.post('/execucoes/responder', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('tarefas.executar'), execucaoController.responderItem)
 router.post('/execucoes/validar', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('relatorios.ver'), execucaoController.validarItem)
 router.put('/execucoes/:id/concluir', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('tarefas.executar'), execucaoController.concluir)
-router.delete('/execucoes/:id/reverter', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('tarefas.executar'), execucaoController.reverter)
+
+// Reabrir: o próprio operador desfazendo a própria tarefa (tarefas.executar)
+// OU o Líder/Gerente/Dono reabrindo uma tarefa de alguém da equipe
+// (tarefas.conferir) — as duas situações usam a mesma ação.
+async function requireReverterOuConferir(req, res, next) {
+  if (await temPermissao(req.userId, req.userPerfil, 'tarefas.executar')) return next()
+  if (await temPermissao(req.userId, req.userPerfil, 'tarefas.conferir')) return next()
+  return res.status(403).json({ erro: 'Seu perfil não tem permissão para isso.' })
+}
+router.delete('/execucoes/:id/reverter', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requireReverterOuConferir, execucaoController.reverter)
+
+// Conferência (Fase 3, item 3): aprovar/reprovar uma execução da equipe.
+router.put('/execucoes/:id/aprovar', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('tarefas.conferir'), execucaoController.aprovar)
+router.put('/execucoes/:id/reprovar', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('tarefas.conferir'), execucaoController.reprovar)
 
 module.exports = router

@@ -195,6 +195,7 @@ const createTables = async () => {
       pausado_tipo TEXT,
       pausado_ate TEXT,
       ativo INTEGER DEFAULT 1,
+      tipo TEXT NOT NULL DEFAULT 'operador',
       criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `)
@@ -228,7 +229,8 @@ const createTables = async () => {
       concluido_em TIMESTAMP,
       total_itens INTEGER DEFAULT 0,
       itens_concluidos INTEGER DEFAULT 0,
-      score INTEGER DEFAULT 0
+      score INTEGER DEFAULT 0,
+      status_conferencia TEXT NOT NULL DEFAULT 'pendente'
     )
   `)
   await pool.query(`
