@@ -37,6 +37,7 @@ function falhou(nome, detalhe) { falhas++; console.error(`  ✗ ${nome} — ${de
 
 async function limpar() {
   await run('DELETE FROM auditoria WHERE detalhes::text LIKE ?', [`%${PREFIXO}%`])
+  await run('DELETE FROM checklists WHERE titulo LIKE ?', [`${PREFIXO}%`])
   await run('DELETE FROM usuario_lojas WHERE usuario_id IN (SELECT id FROM usuarios WHERE email LIKE ?)', [`${PREFIXO}%`])
   await run('DELETE FROM perfil_permissoes WHERE perfil_id IN (SELECT id FROM perfis WHERE rotulo LIKE ?)', [`${PREFIXO}%`])
   await run('DELETE FROM perfis WHERE rotulo LIKE ?', [`${PREFIXO}%`])
@@ -85,6 +86,9 @@ async function main() {
 
     const lojaA = await run('INSERT INTO lojas (nome, admin_id) VALUES (?, ?)', [`${PREFIXO}Loja A`, donoA.lastID])
     const lojaA2 = await run('INSERT INTO lojas (nome, admin_id) VALUES (?, ?)', [`${PREFIXO}Loja A-2`, donoA.lastID])
+    // Tarefa na Loja A-2, pra testar acesso direto por ID (item 5 da Fase 2)
+    const checklistA2 = await run(`INSERT INTO checklists (titulo, loja_id, criado_por, recorrencia) VALUES (?, ?, ?, 'diario')`,
+      [`${PREFIXO}Tarefa A-2`, lojaA2.lastID, donoA.lastID])
 
     const gerenteA = await run(`INSERT INTO usuarios (nome, email, senha, perfil, loja_id) VALUES (?, ?, ?, 'gerente', ?)`,
       [`${PREFIXO}Gerente A`, `${PREFIXO}gerentea@teste.local`, hash, lojaA.lastID])
@@ -153,6 +157,33 @@ async function main() {
       ok('gerente vê a própria unidade (Loja A) e NÃO vê a Loja A-2 (mesma conta, outra unidade)')
     } else {
       falhou('gerente vê só a própria unidade', JSON.stringify(nomesVistos))
+    }
+
+    console.log('-- segunda camada: acesso direto por ID também respeita a unidade (Fase 2, item 5) --')
+    const vePorIdLojaA2 = await chamar('GET', `/lojas/${lojaA2.lastID}`, tokenGerente)
+    if (vePorIdLojaA2.status === 404) {
+      ok('gerente NÃO consegue abrir a Loja A-2 direto por ID (mesma conta, outra unidade)')
+    } else {
+      falhou('gerente não deveria abrir a Loja A-2 por ID', JSON.stringify(vePorIdLojaA2))
+    }
+    const itensTarefaA2 = await chamar('GET', `/checklists/${checklistA2.lastID}/itens`, tokenGerente)
+    if (itensTarefaA2.status === 404) {
+      ok('gerente NÃO consegue ver os itens da Tarefa A-2 direto por ID (outra unidade)')
+    } else {
+      falhou('gerente não deveria ver itens da Tarefa A-2', JSON.stringify(itensTarefaA2))
+    }
+    const editaTarefaA2 = await chamar('PUT', `/checklists/${checklistA2.lastID}`, tokenGerente, { titulo: 'invadido', recorrencia: 'diario' })
+    if (editaTarefaA2.status === 404) {
+      ok('gerente NÃO consegue editar a Tarefa A-2 direto por ID (outra unidade)')
+    } else {
+      falhou('gerente não deveria editar a Tarefa A-2', JSON.stringify(editaTarefaA2))
+    }
+    // Mas o Dono, que vê a conta toda, continua acessando a Loja A-2 sem problema
+    const donoVeLojaA2 = await chamar('GET', `/lojas/${lojaA2.lastID}`, await login(`${PREFIXO}donoa@teste.local`))
+    if (donoVeLojaA2.status === 200) {
+      ok('Dono continua acessando a Loja A-2 por ID normalmente (não é afetado pela restrição por unidade)')
+    } else {
+      falhou('Dono deveria continuar acessando qualquer unidade da própria conta', JSON.stringify(donoVeLojaA2))
     }
 
     console.log('-- conta A nunca vê a conta B --')

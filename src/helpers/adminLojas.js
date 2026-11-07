@@ -50,9 +50,19 @@ async function getLojaIdsVisiveis(userId, userPerfil) {
 }
 
 // Confere se uma loja específica pertence à conta do usuário logado.
+// Fase 2, item 5: segunda camada de restrição por unidade. Antes só
+// conferia "essa loja é da minha conta?" (getLojaIds, a conta toda); agora
+// confere "essa loja é uma das que EU especificamente posso ver?"
+// (getLojaIdsVisiveis). Dono continua vendo tudo (getLojaIdsVisiveis já
+// devolve getLojaIds pra ele); qualquer outro perfil só acessa por ID
+// (GET/PUT/DELETE de uma loja, tarefa, execução, etc.) as unidades
+// vinculadas a ele — não só as da conta. Como quase toda checagem de
+// "isso pertence à minha conta" (checklistPertenceAConta,
+// usuarioPertenceAConta, etc.) passa por aqui, essa única mudança já
+// cobre acesso direto por ID em cascata.
 async function lojaPertenceAConta(lojaId, userId, userPerfil) {
   if (!lojaId) return false
-  const ids = await getLojaIds(userId, userPerfil)
+  const ids = await getLojaIdsVisiveis(userId, userPerfil)
   return ids.includes(parseInt(lojaId))
 }
 
