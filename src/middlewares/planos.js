@@ -17,7 +17,11 @@ async function getSubscription(adminId) {
   return rows[0] ?? null
 }
 
-// Bloqueia com 402 se suspenso/cancelado ou trial expirado
+// Bloqueia com 402 se suspenso/cancelado. Trial vencido NÃO bloqueia mais
+// (1.5) — o dono continua entrando e vendo os dados, só marca req.somenteLeitura
+// pra quem quiser recusar uma ação de escrita específica (ver
+// bloquearEscritaSeSomenteLeitura abaixo). Bloquear tudo (como era antes)
+// assustava o cliente logo que o trial vencia.
 const requirePlanoAtivo = async (req, res, next) => {
   try {
     const adminId = await getAdminId(req.userId, req.userPerfil)
@@ -30,16 +34,30 @@ const requirePlanoAtivo = async (req, res, next) => {
       return res.status(402).json({ erro: 'Assinatura suspensa ou cancelada.', status: sub.status })
     }
 
-    if (sub.status === 'trial' && sub.trial_fim && new Date(sub.trial_fim) < new Date()) {
-      return res.status(402).json({ erro: 'Período de trial expirado.', status: 'trial_expirado' })
-    }
-
     req.adminId = adminId
     req.subscription = sub
+
+    if (sub.status === 'trial' && sub.trial_fim && new Date(sub.trial_fim) < new Date()) {
+      req.somenteLeitura = true
+    }
+
     next()
   } catch (e) {
     res.status(500).json({ erro: e.message })
   }
+}
+
+// Usar DEPOIS de requirePlanoAtivo, só nas rotas que CRIAM/ALTERAM dados.
+// Se o trial venceu, recusa a escrita com mensagem clara (a leitura continua
+// liberada por requirePlanoAtivo sozinho).
+const bloquearEscritaSeSomenteLeitura = (req, res, next) => {
+  if (req.somenteLeitura) {
+    return res.status(403).json({
+      erro: 'Seu período de teste acabou. Assine um plano para continuar criando e editando — os dados continuam aí, só a visualização está liberada.',
+      status: 'trial_expirado'
+    })
+  }
+  next()
 }
 
 // Bloqueia com 403 se o plano não tem a feature solicitada
@@ -131,4 +149,4 @@ const checkLimite = (tipo) => async (req, res, next) => {
   }
 }
 
-module.exports = { requirePlanoAtivo, requireFeature, checkLimite }
+module.exports = { requirePlanoAtivo, requireFeature, checkLimite, bloquearEscritaSeSomenteLeitura }
