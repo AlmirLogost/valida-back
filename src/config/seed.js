@@ -102,6 +102,7 @@ const seedDatabase = async () => {
     UNION ALL SELECT id, 'equipe', 'editar', perm_gerenciar_equipe FROM perfis WHERE sistema = 1
     UNION ALL SELECT id, 'equipe', 'arquivar', perm_gerenciar_equipe FROM perfis WHERE sistema = 1
     UNION ALL SELECT id, 'relatorios', 'ver', CASE WHEN perm_relatorios = 1 OR perm_conferir = 1 THEN 1 ELSE 0 END FROM perfis WHERE sistema = 1
+    UNION ALL SELECT id, 'relatorios', 'exportar', perm_relatorios FROM perfis WHERE sistema = 1
     UNION ALL SELECT id, 'comissoes', 'ver_todas', perm_gerenciar_equipe FROM perfis WHERE sistema = 1
     UNION ALL SELECT id, 'comissoes', 'ver_minhas', 1 FROM perfis WHERE sistema = 1
     UNION ALL SELECT id, 'configuracoes', 'ver', perm_configuracoes FROM perfis WHERE sistema = 1
@@ -122,7 +123,7 @@ const seedDatabase = async () => {
       ('tarefas','ver'),('tarefas','criar'),('tarefas','editar'),('tarefas','arquivar'),('tarefas','executar'),('tarefas','conferir'),
       ('unidades','ver'),('unidades','criar'),('unidades','editar'),('unidades','arquivar'),
       ('equipe','ver'),('equipe','criar'),('equipe','editar'),('equipe','arquivar'),
-      ('relatorios','ver'),
+      ('relatorios','ver'),('relatorios','exportar'),
       ('comissoes','ver_todas'),('comissoes','ver_minhas'),
       ('configuracoes','ver'),('configuracoes','editar'),
       ('acessos','ver'),('acessos','criar'),('acessos','editar'),('acessos','arquivar'),

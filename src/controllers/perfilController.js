@@ -295,7 +295,7 @@ const MODULOS_ACOES = {
   unidades: ['ver', 'criar', 'editar', 'arquivar'],
   equipe: ['ver', 'criar', 'editar', 'arquivar'],
   acessos: ['ver', 'criar', 'editar', 'arquivar'],
-  relatorios: ['ver'],
+  relatorios: ['ver', 'exportar'],
   comissoes: ['ver_todas', 'ver_minhas'],
   plano: ['ver'],
   configuracoes: ['ver', 'editar']
