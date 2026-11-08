@@ -135,3 +135,47 @@ nenhuma checagem de permissão granular no back, e existe um bug real de
 mistura de contas em perfis personalizados). O Passo 6 (planos) é mais
 simples do que parecia — a maior parte já existe; falta ajustar consistência
 de mensagens e corrigir o bug pontual do `carregarLimites`.
+
+## 5. Fase 3 — resumo das mudanças (branch `reforma-acessos`)
+
+Este documento registrava o estado em que a reforma começou (Passo 1). Esta
+seção resume o que a Fase 3 mudou em cima daquilo, pra quem ler este arquivo
+mais tarde não precisar reconstruir o histórico pelos commits.
+
+- **Item 1 (Acessos)**: corrigido o bug que travava o Dono pra sempre fora de
+  um cargo órfão (sem `admin_id`/`loja_id`) — `perfilPertenceAConta` agora
+  "adota" esse cargo pra conta do Dono que tentar abri-lo, em vez de recusar
+  pra sempre. Clicar num cargo agora abre a matriz diretamente. Cargos
+  ganharam **alcance** (`perfis.escopo` + tabela `perfil_lojas`, migration
+  012): própria unidade / unidades escolhidas / todas — consumido por
+  `getLojaIdsVisiveis`.
+- **Item 2 (Unidades)**: editar uma loja sem horários configurados não é mais
+  bloqueado (só exigido ao criar). Nova UI de "dias de fechamento" (datas
+  específicas sem expediente) — o endpoint já existia, só não tinha tela.
+- **Item 3 (Tarefas)**: o cargo de sistema "fiscal" passou a ter o rótulo
+  **"Líder"** (o slug técnico `fiscal` continua o mesmo em todo o código e no
+  banco — só o texto mostrado mudou, mesmo princípio já usado antes para
+  `super_admin` → "Dono"). `checklists` ganhou a coluna `tipo` (`lider` /
+  `operador`, migration 013) e a tela de Tarefas ganhou abas "Tarefas do
+  Líder" / "Tarefas do Operador". `execucoes` ganhou `status_conferencia` e
+  o Líder passou a poder **aprovar/reprovar/reabrir** a tarefa de alguém da
+  equipe (rotas novas `PUT /execucoes/:id/aprovar` e `/reprovar`, gated pela
+  nova ação `tarefas.conferir` na matriz). De passagem, corrigido um bug que
+  a própria Reforma de Acessos tinha introduzido: o Líder não conseguia
+  concluir/reabrir a PRÓPRIA tarefa (`tarefas.executar` estava sempre 0 pra
+  fiscal nas colunas antigas).
+- **Item 4 (menu)**: "Hoje" → "Dashboard" no menu lateral.
+- **Item 5 (Configurações)**: removida a seção "Unidades" de Configurações
+  (duplicava a página Unidades do menu lateral); o atalho correspondente no
+  painel do usuário agora leva direto pra `/lojas`.
+- **Item 6 (Relatórios)**: a tela de Relatórios (`Execucoes.vue`) ganhou
+  barra de filtros (período/unidade/pessoa/tipo), KPIs (concluídas, % de
+  conclusão, atrasadas, tempo médio, comissão do período), gráfico de
+  concluídas por dia, busca/ordenação na tabela e exportação CSV — tudo
+  reaproveitando os dados que o front já carregava, sem endpoint novo.
+  Única peça nova no back: a ação `relatorios.exportar` na matriz de
+  permissões (migration 014), que controla o botão de exportar.
+
+Migrations desta fase: `012_escopo_cargo.sql`, `013_lider_operador.sql`,
+`014_relatorios_exportar.sql` — todas aditivas (`IF NOT EXISTS`/
+`ON CONFLICT ... DO UPDATE`), seguras de rodar de novo.

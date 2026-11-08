@@ -64,3 +64,21 @@ Nada precisou ser corrigido — os 47 endereços já funcionavam. (A Fase 1 já
 tinha corrigido, ao longo do caminho, os dois bugs de mistura de contas em
 `perfilPertenceAConta` e na listagem de perfis que teriam causado exatamente
 esse tipo de quebra.)
+
+## Fase 3 — telas alteradas
+
+| Tela | O que mudou |
+|---|---|
+| `Acessos.vue` | Clicar num cargo abre a matriz direto (antes o botão "Permissões" ficava desabilitado por um bug). Nova seção de "Alcance" (própria unidade / unidades escolhidas / todas) e contador "X pessoas usam este cargo". |
+| `Lojas.vue` | Editar uma loja sem horários não trava mais o resto do formulário. Nova seção "Dias de fechamento" (data + motivo, com lista e remoção). |
+| `Tarefas.vue` | Duas abas no topo: "Tarefas do Líder" e "Tarefas do Operador", filtrando o kanban pelo novo campo `tipo` do checklist. "Fiscal" passou a aparecer como "Líder" em todos os rótulos (cards de função, badge da coluna). |
+| `MinhasTarefas.vue` | O Líder, ao olhar a tarefa de alguém da equipe já feita, ganha botões de Aprovar/Reprovar/Reabrir (antes só tinha leitura, sem nenhuma ação). |
+| `Equipe.vue` | Filtro e badge de perfil mostram "Líder" em vez de "fiscal" (era o slug técnico aparecendo direto na tela). |
+| `Sidebar.vue` | Item de menu "Hoje" renomeado para "Dashboard". Atalho "Unidades" do painel do usuário agora leva direto pra `/lojas` (antes ia pra uma seção de Configurações que foi removida). |
+| `Configuracoes.vue` | Removida a seção "Unidades" (duplicava a página do menu lateral) — ficaram Minha Conta e Plano & Assinatura. |
+| `Execucoes.vue` (Relatórios) | Reformado por completo: filtros de período/unidade/pessoa/tipo, KPIs, gráfico de concluídas por dia, busca/ordenação na tabela, exportar CSV, skeleton de carregamento. Corrigido de passagem um bug em que o comparativo entre unidades só mostrava dados certos da última unidade vista no menu lateral. |
+
+Scripts de teste cobrindo o back dessas mudanças:
+`back/scripts/teste_lider_operador.js` (rótulo Líder, tipo de tarefa,
+conferência) e `back/scripts/teste_relatorios_exportar.js` (nova permissão
+`relatorios.exportar`).
