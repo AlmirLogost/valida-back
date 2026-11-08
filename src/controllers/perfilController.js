@@ -1,5 +1,5 @@
 const { query, run } = require('../config/database')
-const { registrarAuditoria } = require('../middlewares/permissoes')
+const { registrarAuditoria, temPermissao } = require('../middlewares/permissoes')
 
 // Mapeia as 8 colunas antigas pra matriz nova (mesma lógica das migrations
 // 006/007) — usado aqui pra todo cargo personalizado criado a partir de
@@ -125,7 +125,7 @@ exports.listar = async (req, res) => {
 // Criar novo perfil com permissoes
 exports.criar = async (req, res) => {
   try {
-    const { nome, rotulo, metodo_login, pode_acessar_painel, cor, loja_id } = req.body
+    const { nome, rotulo, metodo_login, pode_acessar_painel, cor, loja_id, descricao } = req.body
 
     if (!rotulo) {
       return res.status(400).json({ erro: 'Nome do cargo e obrigatorio' })
@@ -169,11 +169,11 @@ exports.criar = async (req, res) => {
       req.body.perm_configuracoes
 
     const result = await run(
-      `INSERT INTO perfis (nome, rotulo, loja_id, admin_id, metodo_login, pode_acessar_painel, cor, ordem,
+      `INSERT INTO perfis (nome, rotulo, descricao, loja_id, admin_id, metodo_login, pode_acessar_painel, cor, ordem,
         ${PERM_COLS.join(', ')})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ${PERM_COLS.map(() => '?').join(', ')})`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${PERM_COLS.map(() => '?').join(', ')})`,
       [
-        slug, rotulo.trim(), loja_id || null, adminId,
+        slug, rotulo.trim(), descricao || null, loja_id || null, adminId,
         metodo_login || 'pin', temAcessoPainel ? 1 : 0,
         cor || '#3483fa', proximaOrdem,
         ...permValues
@@ -192,7 +192,7 @@ exports.criar = async (req, res) => {
 exports.atualizar = async (req, res) => {
   try {
     const { id } = req.params
-    const { rotulo, metodo_login, pode_acessar_painel, cor } = req.body
+    const { rotulo, metodo_login, pode_acessar_painel, cor, descricao } = req.body
 
     const { perfilPertenceAConta } = require('../helpers/adminLojas')
     if (!(await perfilPertenceAConta(id, req.userId, req.userPerfil))) {
@@ -215,8 +215,8 @@ exports.atualizar = async (req, res) => {
     if (perfil[0].sistema) {
       const permUpdate = PERM_COLS.map(col => `${col} = ?`).join(', ')
       await run(
-        `UPDATE perfis SET rotulo = ?, cor = ?, pode_acessar_painel = ?, ${permUpdate} WHERE id = ?`,
-        [rotulo || perfil[0].rotulo, cor || perfil[0].cor, temAcessoPainel ? 1 : 0, ...permValues, id]
+        `UPDATE perfis SET rotulo = ?, cor = ?, descricao = ?, pode_acessar_painel = ?, ${permUpdate} WHERE id = ?`,
+        [rotulo || perfil[0].rotulo, cor || perfil[0].cor, descricao !== undefined ? descricao : perfil[0].descricao, temAcessoPainel ? 1 : 0, ...permValues, id]
       )
       await sincronizarMatrizPermissoes(id, permValues)
       await registrarAuditoria(req, { acao: 'editar', entidade: 'perfil', entidade_id: id })
@@ -225,12 +225,13 @@ exports.atualizar = async (req, res) => {
 
     const permUpdate = PERM_COLS.map(col => `${col} = ?`).join(', ')
     await run(
-      `UPDATE perfis SET rotulo = ?, metodo_login = ?, pode_acessar_painel = ?, cor = ?, ${permUpdate} WHERE id = ?`,
+      `UPDATE perfis SET rotulo = ?, metodo_login = ?, pode_acessar_painel = ?, cor = ?, descricao = ?, ${permUpdate} WHERE id = ?`,
       [
         rotulo || perfil[0].rotulo,
         metodo_login || perfil[0].metodo_login,
         temAcessoPainel ? 1 : 0,
         cor || perfil[0].cor,
+        descricao !== undefined ? descricao : perfil[0].descricao,
         ...permValues, id
       ]
     )
@@ -336,11 +337,11 @@ exports.duplicar = async (req, res) => {
     const proximaOrdem = (maxOrdem[0]?.max || 0) + 1
 
     const novo = await run(
-      `INSERT INTO perfis (nome, rotulo, admin_id, metodo_login, pode_acessar_painel, cor, ordem, sistema, escopo,
+      `INSERT INTO perfis (nome, rotulo, descricao, admin_id, metodo_login, pode_acessar_painel, cor, ordem, sistema, escopo,
         ${PERM_COLS.join(', ')})
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ${PERM_COLS.map(() => '?').join(', ')})`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ${PERM_COLS.map(() => '?').join(', ')})`,
       [
-        slug, rotulo, adminId, p.metodo_login, p.pode_acessar_painel, p.cor, proximaOrdem, p.escopo || 'propria_unidade',
+        slug, rotulo, p.descricao || null, adminId, p.metodo_login, p.pode_acessar_painel, p.cor, proximaOrdem, p.escopo || 'propria_unidade',
         ...PERM_COLS.map(col => p[col])
       ]
     )
@@ -411,11 +412,22 @@ exports.salvarPermissoes = async (req, res) => {
       return res.status(400).json({ erro: 'Envie a lista de permissões.' })
     }
 
+    // Ninguém dá a um cargo uma permissão que não tem — só o Dono (que
+    // sempre passa em temPermissao) pode conceder qualquer coisa. Sem essa
+    // checagem, um Gerente com "acessos.editar" mas sem, por exemplo,
+    // "comissoes.ver_todas" poderia criar um cargo com mais poder do que
+    // o dele próprio.
     for (const item of (permissoes || [])) {
       const acoesValidas = MODULOS_ACOES[item?.modulo]
       if (!acoesValidas || !acoesValidas.includes(item?.acao)) {
         return res.status(400).json({ erro: `Módulo/ação inválido: ${item?.modulo}.${item?.acao}` })
       }
+      if (item.permitido && !(await temPermissao(req.userId, req.userPerfil, `${item.modulo}.${item.acao}`))) {
+        return res.status(403).json({ erro: `Você não pode conceder "${item.modulo}.${item.acao}" porque seu próprio cargo não tem essa permissão.` })
+      }
+    }
+
+    for (const item of (permissoes || [])) {
       await run(
         `INSERT INTO perfil_permissoes (perfil_id, modulo, acao, permitido) VALUES (?, ?, ?, ?)
          ON CONFLICT (perfil_id, modulo, acao) DO UPDATE SET permitido = EXCLUDED.permitido`,

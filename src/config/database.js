@@ -112,6 +112,7 @@ const createTables = async () => {
       id SERIAL PRIMARY KEY,
       nome TEXT NOT NULL,
       rotulo TEXT NOT NULL,
+      descricao TEXT,
       loja_id INTEGER,
       admin_id INTEGER,
       escopo TEXT NOT NULL DEFAULT 'propria_unidade',

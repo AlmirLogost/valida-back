@@ -129,6 +129,18 @@ exports.atualizar = async (req, res) => {
     if (!(await usuarioPertenceAConta(id, req.userId, req.userPerfil))) {
       return res.status(404).json({ erro: 'Usuário não encontrado' })
     }
+
+    // Cada conta tem exatamente UM Dono (super_admin) — ele É a raiz da
+    // conta (getAdminId devolve o próprio id pra ele, não existe "outro
+    // Dono" pra assumir o lugar). Rebaixar o Dono deixaria a conta sem
+    // ninguém com acesso total, então essa troca é sempre recusada.
+    if (perfil !== 'super_admin') {
+      const alvoAtual = await query('SELECT perfil FROM usuarios WHERE id = ?', [id])
+      if (alvoAtual[0]?.perfil === 'super_admin') {
+        return res.status(403).json({ erro: 'O Dono da conta não pode ser rebaixado para outro cargo.' })
+      }
+    }
+
     const lojaIds = await getLojaIds(req.userId, req.userPerfil)
     if (loja_id && !lojaIds.includes(parseInt(loja_id))) {
       return res.status(404).json({ erro: 'Loja não encontrada' })
@@ -221,6 +233,14 @@ exports.deletar = async (req, res) => {
     if (!(await usuarioPertenceAConta(id, req.userId, req.userPerfil))) {
       return res.status(404).json({ erro: 'Usuário não encontrado' })
     }
+
+    // O Dono da conta nunca pode ser arquivado — é a raiz da conta, não
+    // existe outro Dono pra assumir o lugar (ver mesma regra em atualizar).
+    const alvoAtual = await query('SELECT perfil FROM usuarios WHERE id = ?', [id])
+    if (alvoAtual[0]?.perfil === 'super_admin') {
+      return res.status(403).json({ erro: 'O Dono da conta não pode ser arquivado.' })
+    }
+
     // Mantém ativo = 0 (como já era — mudar esse valor exigiria revisar todo
     // filtro "ativo = 1" do sistema, fora do escopo deste passo). Só soma
     // data/quem arquivou, que são novos e não afetam nenhuma consulta ainda.
