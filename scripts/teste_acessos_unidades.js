@@ -301,6 +301,27 @@ async function main() {
     await run('DELETE FROM perfil_permissoes WHERE perfil_id = ?', [cargoAlcance.lastID])
     await run('DELETE FROM perfis WHERE id = ?', [cargoAlcance.lastID])
 
+    console.log('-- horários: salvar com lista vazia realmente limpa os dias (Fase 4, bloco G) --')
+    const salvaDoisHorarios = await chamar('PUT', `/lojas/${lojaA.lastID}/horarios`, tokenDono, {
+      horarios: [
+        { dia_semana: 1, hora_abertura: '08:00', hora_fechamento: '18:00' },
+        { dia_semana: 2, hora_abertura: '08:00', hora_fechamento: '18:00' }
+      ]
+    })
+    const leDoisHorarios = await chamar('GET', `/lojas/${lojaA.lastID}/horarios`, tokenDono)
+    if (salvaDoisHorarios.status === 200 && (leDoisHorarios.body || []).length === 2) {
+      ok('salva 2 horários e a leitura devolve os 2')
+    } else {
+      falhou('deveria salvar e ler 2 horários', JSON.stringify({ salvaDoisHorarios, leDoisHorarios }))
+    }
+    const salvaVazio = await chamar('PUT', `/lojas/${lojaA.lastID}/horarios`, tokenDono, { horarios: [] })
+    const leVazio = await chamar('GET', `/lojas/${lojaA.lastID}/horarios`, tokenDono)
+    if (salvaVazio.status === 200 && (leVazio.body || []).length === 0) {
+      ok('salvar com lista vazia realmente limpa os horários (o bug era o front nunca chamar isso)')
+    } else {
+      falhou('salvar lista vazia deveria limpar os horários', JSON.stringify({ salvaVazio, leVazio }))
+    }
+
     console.log('')
     if (falhas === 0) console.log('✅ Todos os testes passaram — API de Acessos e Unidades funciona.')
     else console.log(`❌ ${falhas} teste(s) falharam.`)
