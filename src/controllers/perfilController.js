@@ -89,14 +89,15 @@ exports.listar = async (req, res) => {
   try {
     const { getAdminId, getLojaIds } = require('../helpers/adminLojas')
     const { loja_id } = req.query
+    const arquivados = req.query.arquivados === '1'
     const adminId = await getAdminId(req.userId, req.userPerfil)
     // "admin_id = ?" cobre os cargos criados depois da migration 005; o
     // "OR" com loja_id cobre cargos antigos que nunca tiveram admin_id
     // preenchido (não deveria sobrar nenhum, mas sem isso qualquer um
     // ficaria invisível pra sempre pra quem o criou).
     const lojaIds = await getLojaIds(req.userId, req.userPerfil)
-    let sql = 'SELECT * FROM perfis WHERE ativo = 1 AND (sistema = 1 OR admin_id = ? OR (admin_id IS NULL AND loja_id = ANY(?)))'
-    const params = [adminId, lojaIds]
+    let sql = `SELECT * FROM perfis WHERE ativo = ? AND (sistema = 1 OR admin_id = ? OR (admin_id IS NULL AND loja_id = ANY(?)))`
+    const params = [arquivados ? 0 : 1, adminId, lojaIds]
     if (loja_id) {
       sql += ' AND (loja_id = ? OR loja_id IS NULL)'
       params.push(loja_id)
@@ -283,6 +284,23 @@ exports.deletar = async (req, res) => {
     await run('UPDATE perfis SET ativo = 0 WHERE id = ?', [id])
     await registrarAuditoria(req, { acao: 'arquivar', entidade: 'perfil', entidade_id: id, detalhes: substituto_id ? { substituto_id } : undefined })
     res.json({ message: 'Perfil excluido!' })
+  } catch (erro) {
+    res.status(500).json({ erro: erro.message })
+  }
+}
+
+// Restaurar cargo arquivado (Fase 4, bloco J) — "nunca excluir" vale pra
+// cargo também: arquivar precisa ter um caminho de volta.
+exports.restaurar = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { perfilPertenceAConta } = require('../helpers/adminLojas')
+    if (!(await perfilPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Perfil nao encontrado' })
+    }
+    await run('UPDATE perfis SET ativo = 1 WHERE id = ?', [id])
+    await registrarAuditoria(req, { acao: 'restaurar', entidade: 'perfil', entidade_id: id })
+    res.json({ message: 'Cargo restaurado!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
   }

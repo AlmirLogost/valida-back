@@ -198,6 +198,21 @@ async function main() {
       falhou('pessoa reatribuída para o substituto', JSON.stringify(pessoaRealocada))
     }
 
+    console.log('-- arquivar e restaurar um cargo (Fase 4, bloco J) --')
+    const listaArquivados = await chamar('GET', '/perfis?arquivados=1', tokenDono)
+    if ((listaArquivados.body || []).some(c => c.id === cargoEmUso.lastID)) {
+      ok('o cargo arquivado aparece em GET /perfis?arquivados=1')
+    } else {
+      falhou('cargo arquivado deveria aparecer na lista de arquivados', JSON.stringify(listaArquivados.body))
+    }
+    const restauraCargo = await chamar('PUT', `/perfis/${cargoEmUso.lastID}/restaurar`, tokenDono)
+    const listaAposRestaurar = await chamar('GET', '/perfis', tokenDono)
+    if (restauraCargo.status === 200 && (listaAposRestaurar.body || []).some(c => c.id === cargoEmUso.lastID)) {
+      ok('restaurar o cargo funciona — volta a aparecer na lista normal')
+    } else {
+      falhou('restaurar cargo', JSON.stringify({ restauraCargo, listaAposRestaurar: listaAposRestaurar.body }))
+    }
+
     console.log('-- resumo de impacto de uma unidade --')
     const impacto = await chamar('GET', `/lojas/${lojaA.lastID}/impacto-arquivamento`, tokenDono)
     if (impacto.status === 200 && impacto.body?.tarefas === 1 && impacto.body?.pessoas >= 1) {

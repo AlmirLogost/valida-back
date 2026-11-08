@@ -17,5 +17,6 @@ router.get('/perfis/:id/permissoes', auth, requirePermissao('acessos.ver'), perf
 router.put('/perfis/:id/permissoes', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('acessos.editar'), perfilController.salvarPermissoes)
 router.post('/perfis/:id/duplicar', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('acessos.criar'), perfilController.duplicar)
 router.delete('/perfis/:id', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('acessos.arquivar'), perfilController.deletar)
+router.put('/perfis/:id/restaurar', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('acessos.arquivar'), perfilController.restaurar)
 
 module.exports = router
