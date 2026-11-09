@@ -579,3 +579,47 @@ funcionando por uma tela que não foi pensada pra celular — essa troca
 seria a opção mais arriscada, não a mais segura, então foi descartada.
 
 Blocos K ainda não iniciado nesta fase.
+
+## Correção pontual — matriz de permissões não aparecia em Acessos
+
+Bug relatado separadamente: ao abrir um cargo na tela Acessos, a lista/
+matriz de permissões não aparecia.
+
+**Investigação (API, antes de tocar em código):** reproduzido
+`GET /perfis/:id/permissoes` como Proprietário, usando as duas contas
+reais do banco local, para os 4 cargos de sistema, um cargo
+personalizado recém-criado e um cargo duplicado — em todos os casos a
+API devolveu `200` com os 9 módulos completos e a contagem certa de
+permissões. `temPermissao` sempre retorna `true` pra `super_admin`
+antes de checar qualquer linha da matriz — o Proprietário nunca é
+bloqueado por `acessos.ver`/`acessos.editar`, confirmado. Front e back
+concordam no formato (`modulo`, `acao`, `permitido`; `MODULOS_ACOES` do
+back bate com `GRUPOS_DEF` do front). Ou seja: a API nunca foi o
+problema.
+
+**Causa raiz real, em `AcessoDetalhe.vue`:** cada grupo da matriz
+(Painel, Unidades, Equipe, Tarefas...) nascia **recolhido**
+(`gruposAbertos` começava como objeto vazio) — a tela mostrava só os
+cabeçalhos dos grupos, com a contagem "X/Y" pequena, e escondia os
+checkboxes até alguém clicar em cada grupo pra expandir. Pra quem não
+notasse isso, a impressão era "a matriz não aparece", mesmo com os
+dados certos chegando da API. Corrigido: todos os grupos abrem
+automaticamente ao carregar o cargo.
+
+**Reforços defensivos, pedidos explicitamente mesmo sem o bug
+reproduzido na causa raiz:**
+- Migration 018 (não destrutiva): cargo com ZERO linhas em
+  `perfil_permissoes` (cargo antigo, de antes da matriz existir)
+  recebe o backfill completo, derivado das colunas legadas quando
+  existem. Nenhum cargo local precisou disso agora — nenhum tinha
+  zero linhas — mas protege contra o cenário.
+- `AcessoDetalhe.vue` ganhou um fallback de `modulos` (lista fixa
+  espelhando `MODULOS_ACOES` do back) pro caso da API alguma vez
+  devolver esse campo vazio, e um estado de erro de verdade ("Tentar
+  de novo") em vez de só um toast de 3 segundos quando o carregamento
+  falha.
+
+Teste novo: `back/scripts/teste_matriz_permissoes_nunca_vazia.js` —
+cobre cargo de sistema, personalizado em branco, duplicado, e até um
+cargo sem nenhuma linha salva (simulado), confirmando que `modulos`
+sempre vem completo e o Proprietário nunca é bloqueado.
