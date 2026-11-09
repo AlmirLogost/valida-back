@@ -104,3 +104,27 @@ Scripts de teste novos desta fase: `back/scripts/teste_acessos_pagina_cargo.js`
 rebaixado/arquivado) e os blocos novos adicionados a
 `back/scripts/teste_acessos_unidades.js` (horários com lista vazia,
 arquivar/restaurar cargo).
+
+## Fase 5 — telas alteradas (blocos B a J)
+
+Pedido maior: perfil de acesso (Operador/Coordenador) como teto do que
+cada cargo pode receber, tarefa atribuída a um cargo inteiro (com
+herança), e revisão do resto das telas já feitas na Fase 4.
+
+| Bloco | Tela / arquivo | O que mudou |
+|---|---|---|
+| B | `Acessos.vue`, `AcessoDetalhe.vue` | Toda a lógica de teto é no back (ver REFORMA.md); no front, `/api/me` e o login (admin e PIN) passam a devolver `perfil_acesso` resolvido. |
+| B | `MinhasTarefas.vue`, `Tarefas.vue`, `Conferencia.vue` | Decisões que olhavam só o slug literal `'fiscal'` (quem é Coordenador) migradas pra `perfil_acesso`, com fallback pro slug pra sessão antiga. **Bug corrigido em `Conferencia.vue`**: a lista de equipe só incluía `'operador'`/`'fiscal'` — um cargo Coordenador personalizado desaparecia da tela de conferência do Proprietário. |
+| C | `Acessos.vue`, `AcessoDetalhe.vue` | Lista agrupada em Proprietário/Coordenador/Operador; "+ Novo cargo" ganha passo de escolher o perfil antes do modelo; matriz de permissões esconde (cinza + 🔒) o que está fora do teto do perfil, com tooltip. |
+| D | `ColaboradorCamposForm.vue`, `ModalNovaColaborador.vue` | **Bug corrigido**: o formulário usado em Equipe/Tarefas/Unidades só oferecia dois cargos fixos (Operador/Líder) — qualquer cargo personalizado era impossível de escolher. Agora carrega os cargos de verdade, agrupados por perfil. Aviso de impacto ao trocar o cargo de alguém. |
+| E | `Tarefas.vue` | Nova seção "Cargos" no modal de tarefa — atribuir a um cargo inteiro, com herança (quem entra recebe, quem sai perde). **Bug corrigido**: o quadro só olhava vínculo direto; tarefa só-por-cargo não aparecia em coluna nenhuma. Selo "do cargo" no card. |
+| F | `ModalNovaUnidade.vue` | Campo Telefone, que estava espremido numa coluna de 140px, ganhou a linha inteira. |
+| J | `router/index.js` | Guard de `/login` já autenticado mandava pra `/equipe`; agora manda pro `/dashboard`, igual ao fluxo real de login. |
+
+Nenhuma tela de G, H, I precisou de mudança — já atendiam o pedido
+desde a Fase 4 (confirmado em REFORMA.md).
+
+Scripts de teste novos desta fase: `back/scripts/teste_tarefas_por_cargo.js`
+(herança de tarefa por cargo) e `back/scripts/teste_teto_perfil_acesso.js`
+(teto de permissões, autoconferência, proteção contra promover a
+Proprietário).
