@@ -10,7 +10,20 @@ exports.obter = async (req, res) => {
       [req.userId]
     )
     if (!rows.length) return res.status(404).json({ erro: 'Usuário não encontrado' })
-    res.json(rows[0])
+
+    // perfil_acesso e permissoes resolvidas (Fase 5, bloco B9): mesmo
+    // cálculo usado no login, escopado pela conta do usuário.
+    const { getAdminId, resolverPerfilPorNome, matrizDoPerfil } = require('../helpers/adminLojas')
+    const adminIdMe = await getAdminId(req.userId, rows[0].perfil)
+    const perfilRow = await resolverPerfilPorNome(rows[0].perfil, adminIdMe)
+    const matriz = await matrizDoPerfil(perfilRow?.id)
+
+    res.json({
+      ...rows[0],
+      rotulo_perfil: perfilRow ? perfilRow.rotulo : rows[0].perfil,
+      perfil_acesso: perfilRow ? perfilRow.perfil_acesso : null,
+      matriz
+    })
   } catch (e) { res.status(500).json({ erro: e.message }) }
 }
 

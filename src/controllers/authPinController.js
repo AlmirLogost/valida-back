@@ -210,6 +210,7 @@ async function responderLogin(res, user) {
       periodo_inicio: user.periodo_inicio || null,
       periodo_fim: user.periodo_fim || null,
       rotulo_perfil: perfilData ? perfilData.rotulo : user.perfil,
+      perfil_acesso: perfilData ? perfilData.perfil_acesso : null,
       permissoes,
       matriz
     }

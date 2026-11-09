@@ -358,11 +358,23 @@ exports.reverter = async (req, res) => {
 // Conferência (Fase 3, item 3): o Líder aprova ou reprova uma execução feita
 // por alguém da equipe. "Reabrir" continua sendo o reverter acima (já
 // existia para o próprio operador desfazer a própria tarefa).
+// Ninguém confere a própria execução (Fase 5, bloco B6) — mesmo quem tem
+// "tarefas.conferir" não pode aprovar/reprovar uma execução cujo
+// usuario_id é o dele mesmo. O Proprietário não executa tarefa operacional
+// na prática, mas por segurança a regra vale pra qualquer perfil.
+async function confereASiMesmo(execucaoId, userId) {
+  const rows = await query('SELECT usuario_id FROM execucoes WHERE id = ?', [execucaoId])
+  return rows.length > 0 && rows[0].usuario_id === userId
+}
+
 exports.aprovar = async (req, res) => {
   try {
     const { id } = req.params
     if (!(await execucaoPertenceAConta(id, req.userId, req.userPerfil))) {
       return res.status(404).json({ erro: 'Execução não encontrada' })
+    }
+    if (await confereASiMesmo(id, req.userId)) {
+      return res.status(403).json({ erro: 'Você não pode aprovar a própria execução — peça pra outra pessoa com conferência conferir.' })
     }
     await run("UPDATE execucoes SET status_conferencia = 'aprovado' WHERE id = ?", [id])
     res.json({ ok: true })
@@ -376,6 +388,9 @@ exports.reprovar = async (req, res) => {
     const { id } = req.params
     if (!(await execucaoPertenceAConta(id, req.userId, req.userPerfil))) {
       return res.status(404).json({ erro: 'Execução não encontrada' })
+    }
+    if (await confereASiMesmo(id, req.userId)) {
+      return res.status(403).json({ erro: 'Você não pode reprovar a própria execução — peça pra outra pessoa com conferência conferir.' })
     }
     await run("UPDATE execucoes SET status_conferencia = 'reprovado' WHERE id = ?", [id])
     res.json({ ok: true })

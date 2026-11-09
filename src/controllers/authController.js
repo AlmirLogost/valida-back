@@ -112,6 +112,7 @@ exports.login = async (req, res) => {
         valor_tarefa_feita: user.valor_tarefa_feita,
         valor_mensal_fixo: user.valor_mensal_fixo,
         rotulo_perfil: perfilRow ? perfilRow.rotulo : user.perfil,
+        perfil_acesso: perfilRow ? perfilRow.perfil_acesso : null,
         permissoes,
         matriz
       }
