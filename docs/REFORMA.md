@@ -623,3 +623,22 @@ Teste novo: `back/scripts/teste_matriz_permissoes_nunca_vazia.js` —
 cobre cargo de sistema, personalizado em branco, duplicado, e até um
 cargo sem nenhuma linha salva (simulado), confirmando que `modulos`
 sempre vem completo e o Proprietário nunca é bloqueado.
+
+**Causa real do problema, quando a API já estava certa:** o processo do
+back na porta 3001 estava rodando havia mais de 2 dias (`node
+server.js` puro, sem `nodemon`) — código antigo em memória, sem nenhuma
+das mudanças recentes. Resolvido reiniciando o processo; nenhuma
+mudança de código era necessária além das defensivas acima.
+
+## Correção pontual — cargo novo não aparecia em Tarefas
+
+Bug relatado: "criei um cargo mas não ficou disponível no tarefas".
+
+Causa raiz em `Tarefas.vue`: `cargosComContagem()` só listava um cargo
+se ele já tivesse pelo menos 1 pessoa (`.filter(c => c.nPessoas > 0)`)
+— um cargo recém-criado em Acessos, antes de qualquer colaborador ser
+adicionado a ele, ficava invisível na tela de escolher cargo em
+Tarefas. Contradiz o pedido do bloco E3 ("cargo sem gente aparece
+normal, '0 pessoas · 0 tarefas'"). Removido o filtro; o cargo
+Proprietário continua de fora da lista (tarefa não pode ser atribuída
+a esse cargo, já bloqueado no back desde o bloco E5).
