@@ -347,6 +347,23 @@ também, o que mudaria um comportamento que não foi pedido. Em
 estava — é só cosmético e a tela não carrega a lista de cargos pra
 resolver `perfil_acesso` sem adicionar uma chamada nova só pra isso.
 
+**B5 — alcance por unidade, sem código novo.** `getLojaIdsVisiveis`
+(`back/src/helpers/adminLojas.js`) já tratava `super_admin` e
+qualquer perfil com `escopo = 'todas'` devolvendo TODAS as lojas da
+conta (via `getLojaIds`), sem depender de linha em `usuario_lojas` —
+exatamente o que o B5 pedia. Só faltava o backfill de verdade pra
+contas antigas, feito na migration 016 (bloco B1 acima). Nenhuma
+mudança de código precisou ser feita aqui.
+
+**B7 — cargos padrão em conta nova.** Confirmado sem precisar mudar
+nada: `fiscal`/`operador`/`gerente`/`super_admin` são cargos de
+SISTEMA (`sistema = 1`, `admin_id` nulo), compartilhados — toda conta
+nova já os "recebe" porque `perfilController.listar` inclui
+`sistema = 1` pra qualquer conta, e `resolverPerfilPorNome` os resolve
+dinamicamente por nome em qualquer contexto de conta. `registroController.js`
+só cria o usuário `super_admin`, a primeira loja e o trial; não precisa
+duplicar cargo nenhum.
+
 **Pendências dentro do Bloco B** (não concluídas ainda nesta fase):
 fallback "auto-conferida" quando não existe revisor elegível (parte do
 B6, ver acima). Blocos C a K ainda não iniciados nesta fase.
