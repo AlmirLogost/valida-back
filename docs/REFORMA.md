@@ -557,4 +557,25 @@ Fase 4: `Execucoes.vue` tinha uma conta de comissão própria, divergente
 de `useComissao.js` (a mesma usada em `Equipe.vue`/`MinhasTarefas.vue`)
 — hoje chama `calcComissaoValor()` direto, confirmado no código atual.
 
-Blocos J e K ainda não iniciados nesta fase.
+### Bloco J — entrada por perfil
+
+O fluxo real de login (`login.vue`) já mandava Coordenador/Proprietário
+pro Dashboard no desktop (super_admin no celular cai em Conferência —
+decisão de produto anterior, mantida). Corrigido um resquício: o guard
+de rota (`router.beforeEach`), usado quando alguém já autenticado
+visita `/login` direto (não é o fluxo normal de login, mas pode
+acontecer), ainda mandava pra `/equipe` em vez de `/dashboard` — de
+antes do Dashboard ter virado a visão geral de verdade (Fase 4, bloco
+I). Os dois caminhos agora levam pro mesmo lugar.
+
+**Decisão deliberada: login por PIN (Operador e Líder/Coordenador)
+continua caindo em "Minhas tarefas", não no Dashboard.** O pedido lia
+"Coordenador cai no Dashboard" de um jeito genérico, mas no sistema
+real o login por PIN é pensado pra celular/quiosque — `MinhasTarefas.vue`
+já se adapta por dentro quando quem logou é Coordenador (`isFiscal`):
+mostra a visão de equipe, aprovar/reprovar, etc. Forçar um Líder pro
+Dashboard (uma tela desktop) trocaria um fluxo mobile já pronto e
+funcionando por uma tela que não foi pensada pra celular — essa troca
+seria a opção mais arriscada, não a mais segura, então foi descartada.
+
+Blocos K ainda não iniciado nesta fase.
