@@ -304,13 +304,49 @@ toggle de abertura/fechamento quanto os horários/fechamentos já usam só
   sincronização religaria de volta o que o corte tivesse acabado de
   desligar.
 
+**B9 — login e `/api/me`.** `POST /login`, `POST /login-pin` e
+`GET /me` agora devolvem `perfil_acesso` resolvido (junto com
+`rotulo_perfil` e a `matriz`, que já existiam), escopado pela conta —
+mesma função `resolverPerfilPorNome` já usada nos três lugares.
+
+**B6 — autoconferência.** `execucaoController.aprovar`/`reprovar`
+agora recusam (`403`, mensagem clara) quando quem está conferindo é o
+mesmo `usuario_id` da execução, mesmo tendo `tarefas.conferir` — antes
+só checava se a execução era da mesma conta, nunca se era a própria
+pessoa. Vale pra qualquer perfil, inclusive o Proprietário (o pedido
+diz "ninguém confere a própria execução", sem abrir exceção). A parte
+de "marcar como auto-conferida quando não existe revisor elegível" do
+B6 não foi implementada nesta fase — precisa de uma lógica de alcance
+(quem é Coordenador de escopo maior que a unidade em questão) que não
+existe ainda; fica como pendência.
+
+**B8 — fim das decisões por nome/slug do cargo (parcial).** Migrado
+pra usar `perfil_acesso` em vez do slug literal `'fiscal'`/`'operador'`
+nos pontos reais de decisão do front, sempre com fallback pro slug
+antigo (sessão com token salvo antes dessa mudança, sem
+`perfil_acesso` ainda no `localStorage`):
+- `MinhasTarefas.vue`: `isFiscal`/`isOperador` — modo leitura, filtro
+  de equipe, aprovar/reprovar/reabrir, "um toque pra concluir".
+- `Tarefas.vue`: destaque visual da coluna de um Coordenador no
+  quadro e ordem das colunas ao adicionar colaborador.
+- `Conferencia.vue`: **bug real corrigido** — a lista de equipe dessa
+  tela só incluía quem tinha o slug exato `'operador'` ou `'fiscal'`
+  (`PERFIS_EQUIPE = ['operador', 'fiscal']`); um cargo Coordenador
+  personalizado (ex. "Gerente"/"Supervisor") desaparecia inteiro da
+  tela de conferência do Proprietário. Agora carrega `/perfis` uma
+  vez e resolve por `perfil_acesso`.
+
+Deixado de propósito como está (não é um gap de perfil_acesso, é uma
+regra de produto específica do cargo "fiscal"): em `Tarefas.vue`, os
+botões de configurar comissão/calendário no quadro ficam escondidos só
+quando quem está logado tem o slug `'fiscal'` — Gerente (que também é
+Coordenador) continua vendo esses botões normalmente. Trocar isso por
+`perfil_acesso === 'coordenador'` esconderia os botões do Gerente
+também, o que mudaria um comportamento que não foi pedido. Em
+`Equipe.vue`, a ordenação "fiscal primeiro" na lista também ficou como
+estava — é só cosmético e a tela não carrega a lista de cargos pra
+resolver `perfil_acesso` sem adicionar uma chamada nova só pra isso.
+
 **Pendências dentro do Bloco B** (não concluídas ainda nesta fase):
-login/`/api/me` ainda não devolvem `perfil_acesso` resolvido (B9); front
-ainda decide comportamento de Coordenador pelo slug literal `'fiscal'`
-em vários pontos (`MinhasTarefas.vue`, `Tarefas.vue`,
-`Conferencia.vue`) em vez de `perfil_acesso` — gap real: um cargo
-personalizado classificado como Coordenador (ex. um "Supervisor"
-criado pelo Dono) ainda não ganha as capacidades de conferência nessas
-telas, só o cargo de sistema `fiscal` ganha. Guarda contra
-autoaprovação (ninguém revisa a própria execução) ainda não
-implementada. Blocos C a K ainda não iniciados nesta fase.
+fallback "auto-conferida" quando não existe revisor elegível (parte do
+B6, ver acima). Blocos C a K ainda não iniciados nesta fase.
