@@ -442,4 +442,62 @@ Aviso de impacto adicionado ao trocar o cargo de alguém (frontend) —
 "Ela passa a ter as permissões e as tarefas do cargo novo" antes de
 salvar; a troca já ficava registrada na auditoria do back.
 
-Blocos E a K ainda não iniciados nesta fase.
+### Bloco E — Tarefas por cargo, com herança
+
+**E1-E4 (tela de escolher cargo).** A base (grade de cargos com
+contagem de pessoas/tarefas, breadcrumb "Tarefas › Nome do cargo",
+botão voltar, "+ Adicionar colaborador" quando vazio, lembrar a última
+escolha) já tinha sido construída na Fase 4, bloco D, e continua
+valendo. Não foi refeito o agrupamento visual em duas colunas
+"Coordenador"/"Operador" nem a animação de hover do pedido — prioridade
+foi pro E5/E6 (funcionalidade nova de verdade), que tinha risco e valor
+bem maiores. Fica como polimento visual pendente.
+
+**E5 — tarefa atribuída a um cargo inteiro, com herança (implementado
+por completo).** Antes, uma tarefa só podia ser atribuída a PESSOAS
+(`usuario_checklists`). Agora pode ser atribuída também a um CARGO
+inteiro: todo mundo que tem aquele cargo recebe a tarefa, inclusive
+quem entrar depois; quem sai do cargo deixa de receber — sem precisar
+editar vínculo nenhum por pessoa.
+
+- Migration 017: tabela nova `checklist_cargos` (checklist_id,
+  perfil_nome, ativo) — não toca em `usuario_checklists`, só soma.
+- `checklistCargoController.js` + rotas `POST/GET/DELETE
+  /checklist-cargos`, com as mesmas checagens de conta das rotas de
+  pessoa (e recusa vincular ao cargo Proprietário).
+- "Quem faz" uma tarefa passa a ser a UNIÃO do vínculo direto com o
+  vínculo por cargo (pelo perfil atual da pessoa) em TRÊS lugares:
+  `listarChecklists` (usado por MinhasTarefas), `listarDisponiveis`
+  (exclui o que já vem por cargo) e `listarChecklistsLoja` (visão do
+  Coordenador/Proprietário sobre a equipe) — cada linha marcada com
+  `origem: 'pessoa'|'cargo'`; o vínculo direto sempre prevalece quando
+  os dois existem, sem duplicar a tarefa na lista.
+- Front (`Tarefas.vue`): nova seção "Cargos" no modal de criar/editar
+  tarefa, ao lado de "Colaboradores" — exige pelo menos um dos dois.
+  **Bug real corrigido na mesma frente**: `tarefasFiltradasPorUsuario`
+  (o que decide o que aparece em cada coluna do quadro) e
+  `cargosComContagem` (contagem "X tarefas" na tela de escolha) só
+  olhavam `usuario_checklists` — uma tarefa atribuída só ao cargo não
+  aparecia em coluna nenhuma até essa correção. Card ganhou um selo
+  "do cargo" quando a origem não é um vínculo direto.
+- Decisão de escopo, documentada e deliberada: a resolução de
+  COMISSÃO (`usuarioController.js` `/relatorio-comissao` e
+  `useComissao.js` no front) continua lendo só `usuario_checklists`,
+  sem herança por cargo. Estender isso é uma mudança de cálculo de
+  dinheiro de verdade e merece revisão própria — misturar com a
+  reforma de acessos seria a opção mais arriscada, não a mais segura.
+- `scripts/teste_tarefas_por_cargo.js` (novo) cobre herança ao
+  entrar/sair do cargo, não-duplicação, isolamento entre contas e a
+  recusa de atribuir ao cargo Proprietário.
+
+**E6 — fim da lógica manual de "tipo".** `tipoParaCargo()` decidia o
+tipo da tarefa (`lider`/`operador`) só pelo slug literal `'fiscal'`
+— um cargo Coordenador personalizado fazia a tarefa nascer "operador"
+por engano. Corrigido pra usar `perfil_acesso` do cargo. `checklists.tipo`
+continua existindo como coluna — hoje ele só serve de RÓTULO em
+Relatórios (Líder/Operador), não decide mais nada de acesso real (quem
+decide "quem faz" é `usuario_checklists`/`checklist_cargos`); por isso
+não foi migrado/apagado, e tarefas já existentes mantiveram o tipo
+histórico sem alteração — só tarefa nova usa a regra nova.
+
+Blocos F a K ainda não iniciados nesta fase.
