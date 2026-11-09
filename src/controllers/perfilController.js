@@ -130,7 +130,13 @@ exports.listar = async (req, res) => {
 // Criar novo perfil com permissoes
 exports.criar = async (req, res) => {
   try {
-    const { nome, rotulo, metodo_login, pode_acessar_painel, cor, loja_id, descricao } = req.body
+    const { nome, rotulo, metodo_login, pode_acessar_painel, cor, loja_id, descricao, perfil_acesso } = req.body
+    // Teto de permissões (Fase 5, bloco B/C): todo cargo novo nasce com um
+    // perfil_acesso — nunca fica sem teto (NULL só é o caso do Proprietário,
+    // que não nasce por aqui). Sem valor válido no corpo, nasce 'operador'
+    // (o mais restrito) por segurança; quem cria escolhe o perfil antes de
+    // dar nome ao cargo (ver Acessos.vue).
+    const perfilAcessoFinal = ['operador', 'coordenador'].includes(perfil_acesso) ? perfil_acesso : 'operador'
 
     if (!rotulo) {
       return res.status(400).json({ erro: 'Nome do cargo e obrigatorio' })
@@ -174,13 +180,13 @@ exports.criar = async (req, res) => {
       req.body.perm_configuracoes
 
     const result = await run(
-      `INSERT INTO perfis (nome, rotulo, descricao, loja_id, admin_id, metodo_login, pode_acessar_painel, cor, ordem,
+      `INSERT INTO perfis (nome, rotulo, descricao, loja_id, admin_id, metodo_login, pode_acessar_painel, cor, ordem, perfil_acesso,
         ${PERM_COLS.join(', ')})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${PERM_COLS.map(() => '?').join(', ')})`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${PERM_COLS.map(() => '?').join(', ')})`,
       [
         slug, rotulo.trim(), descricao || null, loja_id || null, adminId,
         metodo_login || 'pin', temAcessoPainel ? 1 : 0,
-        cor || '#3483fa', proximaOrdem,
+        cor || '#3483fa', proximaOrdem, perfilAcessoFinal,
         ...permValues
       ]
     )
@@ -396,12 +402,16 @@ exports.duplicar = async (req, res) => {
     const maxOrdem = await query('SELECT MAX(ordem) as max FROM perfis')
     const proximaOrdem = (maxOrdem[0]?.max || 0) + 1
 
+    // Duplicar herda o perfil_acesso de origem (Fase 5, bloco C) — inclusive
+    // de um cargo de sistema (ex. duplicar "Operador" nasce já classificado
+    // como 'operador'). Só o Proprietário tem perfil_acesso NULL, e ele
+    // nunca é a origem de uma duplicação por essa tela.
     const novo = await run(
-      `INSERT INTO perfis (nome, rotulo, descricao, admin_id, metodo_login, pode_acessar_painel, cor, ordem, sistema, escopo,
+      `INSERT INTO perfis (nome, rotulo, descricao, admin_id, metodo_login, pode_acessar_painel, cor, ordem, sistema, escopo, perfil_acesso,
         ${PERM_COLS.join(', ')})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ${PERM_COLS.map(() => '?').join(', ')})`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ${PERM_COLS.map(() => '?').join(', ')})`,
       [
-        slug, rotulo, p.descricao || null, adminId, p.metodo_login, p.pode_acessar_painel, p.cor, proximaOrdem, p.escopo || 'propria_unidade',
+        slug, rotulo, p.descricao || null, adminId, p.metodo_login, p.pode_acessar_painel, p.cor, proximaOrdem, p.escopo || 'propria_unidade', p.perfil_acesso || 'operador',
         ...PERM_COLS.map(col => p[col])
       ]
     )
