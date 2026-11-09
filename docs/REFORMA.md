@@ -235,3 +235,82 @@ linguagem simples pro Dono está no final da conversa, não aqui):
 Nenhuma migration desta fase altera ou remove dados — a 015 só
 arquiva (`ativo = 0`) cargos que já eram inalcançáveis ou legados; tudo
 reversível manualmente se precisar.
+
+## Fase 5 — perfis de acesso, tarefas por cargo, entrega final
+
+Pedido novo e maior: dois perfis de acesso fixos (Operador/Coordenador)
+como TETO do que cada cargo pode receber, reforma de Tarefas pra
+funcionar por cargo (com herança), revisão de Unidades/Menu/Planos/
+Dashboard/Relatórios já feitos na Fase 4, e entrega final. Trabalho
+feito sem perguntar nada durante a execução — toda escolha em ponto
+cego está documentada abaixo, com o motivo.
+
+### Bloco B — perfil de acesso (teto de permissões)
+
+**Decisão 1 — taxonomia.** O pedido original fala em módulos
+`execucao.*`, `conferencia.*`, `atribuicao.*` e `auditoria.*`. Esses
+módulos não existem no sistema real (a tabela `perfil_permissoes` usa
+`tarefas.ver/criar/editar/arquivar/executar/conferir`,
+`unidades.*`, `equipe.*`, `relatorios.*`, `comissoes.*`,
+`configuracoes.*`, `acessos.*`, `plano.ver`). Em vez de criar uma
+taxonomia paralela (dobraria a manutenção e criaria dois jeitos de
+checar a mesma coisa), os tetos foram mapeados sobre os módulos que já
+existem: `execucao.*` → `tarefas.executar`; `conferencia.*` →
+`tarefas.conferir`; `atribuicao.*` → `tarefas.criar`/`tarefas.editar`.
+Essa é a opção mais segura porque reaproveita o `requirePermissao` e o
+`matrizDoPerfil` já testados, em vez de duplicar a lógica de permissão.
+Definição completa em `back/src/config/tetoPermissoes.js`.
+
+**Decisão 2 — classificação (migration 016).** Cada cargo existente
+foi classificado como `'coordenador'` se tem `tarefas.conferir=1` OU
+`equipe.criar/editar=1` OU `unidades.criar/editar=1` na MATRIZ
+(`perfil_permissoes`), senão `'operador'`. A fonte de verdade é a
+matriz, não as colunas legadas (`perm_conferir`/`perm_gerenciar_equipe`)
+— um cargo personalizado criado pela tela de Acessos (Fase 3+) só grava
+na matriz, nunca nas colunas legadas, então classificar pelas colunas
+legadas erraria todo cargo personalizado moderno. `super_admin`
+(Proprietário) fica fora dos dois perfis, sempre `NULL`. Cargos
+arquivados também são classificados (pra não sobrar um valor nulo
+estranho se algum dia forem restaurados). Resultado verificado no banco
+local: `fiscal`/`gerente` (sistema) → coordenador; `operador`/
+`funcionario` (sistema) → operador; todos os 5 cargos personalizados
+locais (a maioria já arquivada por duplicidade na migration 015) →
+classificados sem erro.
+
+**Decisão 3 — teto do Coordenador não inclui `unidades.criar` nem
+`unidades.arquivar`.** O pedido descreve o Coordenador como quem
+"gerencia unidades existentes dentro do alcance", não quem cria ou
+arquiva unidades novas — isso continua exclusivo do Proprietário (ou de
+uma exceção pontual que ele liberar pra um cargo específico). Também
+confirmado via grep em `back/src/routes/lojaRoutes.js` que não existem
+ações separadas `unidades.abrir_fechar`/`unidades.horarios` — tanto o
+toggle de abertura/fechamento quanto os horários/fechamentos já usam só
+`unidades.editar`, que está no teto do Coordenador.
+
+**Reforço no back (`perfilController.js`):**
+- `salvarPermissoes`: além da regra já existente ("ninguém dá a um
+  cargo uma permissão que não tem"), agora rejeita (`403`) qualquer
+  permissão fora do teto do perfil do cargo — a menos que quem está
+  salvando seja o Proprietário (`super_admin`), que pode abrir uma
+  exceção pontual.
+- `atualizar`: cargos personalizados (não-sistema) podem ter o
+  `perfil_acesso` trocado por este endpoint; cargos de sistema (que
+  incluem o Proprietário) não passam por esse ramo e mantêm a
+  classificação fixa do `seed.js`. Ao trocar, conta quantas pessoas
+  ativas usam o cargo (`pessoas_afetadas` na resposta) e remove da
+  matriz qualquer permissão que fique fora do NOVO teto — esse corte
+  roda depois de `sincronizarMatrizPermissoes` (que reescreve sem
+  condição as linhas derivadas das colunas legadas), senão a
+  sincronização religaria de volta o que o corte tivesse acabado de
+  desligar.
+
+**Pendências dentro do Bloco B** (não concluídas ainda nesta fase):
+login/`/api/me` ainda não devolvem `perfil_acesso` resolvido (B9); front
+ainda decide comportamento de Coordenador pelo slug literal `'fiscal'`
+em vários pontos (`MinhasTarefas.vue`, `Tarefas.vue`,
+`Conferencia.vue`) em vez de `perfil_acesso` — gap real: um cargo
+personalizado classificado como Coordenador (ex. um "Supervisor"
+criado pelo Dono) ainda não ganha as capacidades de conferência nessas
+telas, só o cargo de sistema `fiscal` ganha. Guarda contra
+autoaprovação (ninguém revisa a própria execução) ainda não
+implementada. Blocos C a K ainda não iniciados nesta fase.

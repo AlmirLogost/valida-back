@@ -116,6 +116,7 @@ const createTables = async () => {
       loja_id INTEGER,
       admin_id INTEGER,
       escopo TEXT NOT NULL DEFAULT 'propria_unidade',
+      perfil_acesso TEXT,
       metodo_login TEXT DEFAULT 'pin',
       pode_acessar_painel INTEGER DEFAULT 0,
       cor TEXT DEFAULT '#3483fa',

@@ -1,5 +1,9 @@
 const { query, run } = require('../config/database')
 const { registrarAuditoria, temPermissao } = require('../middlewares/permissoes')
+const { dentroDoTeto, tetoDoPerfilAcesso } = require('../config/tetoPermissoes')
+
+const ROTULOS_PERFIL_ACESSO = { operador: 'Operador', coordenador: 'Coordenador' }
+function rotuloPerfilAcesso(p) { return ROTULOS_PERFIL_ACESSO[p] || p || 'sem perfil' }
 
 // Mapeia as 8 colunas antigas pra matriz nova (mesma lógica das migrations
 // 006/007) — usado aqui pra todo cargo personalizado criado a partir de
@@ -189,11 +193,13 @@ exports.criar = async (req, res) => {
   }
 }
 
+const PERFIL_ACESSO_VALIDOS = ['operador', 'coordenador']
+
 // Atualizar perfil com permissoes
 exports.atualizar = async (req, res) => {
   try {
     const { id } = req.params
-    const { rotulo, metodo_login, pode_acessar_painel, cor, descricao } = req.body
+    const { rotulo, metodo_login, pode_acessar_painel, cor, descricao, perfil_acesso } = req.body
 
     const { perfilPertenceAConta } = require('../helpers/adminLojas')
     if (!(await perfilPertenceAConta(id, req.userId, req.userPerfil))) {
@@ -224,21 +230,57 @@ exports.atualizar = async (req, res) => {
       return res.json({ message: 'Perfil atualizado!' })
     }
 
+    // Mudança de perfil de acesso (Fase 5, bloco B4): só cargos
+    // personalizados (não-sistema) podem ter o perfil_acesso trocado por
+    // aqui — os cargos de sistema (Proprietário/Líder/Operador/Gerente) têm
+    // classificação fixa definida em seed.js e nunca passam por este ramo
+    // (ver `if (perfil[0].sistema)` acima, que já retornou antes de chegar
+    // aqui). Isso também garante, por construção, que o super_admin nunca
+    // tem o perfil_acesso alterado por este endpoint.
+    let pessoasAfetadas = null
+    let novoPerfilAcesso = perfil[0].perfil_acesso
+    const perfilAcessoMudou = perfil_acesso !== undefined && perfil_acesso !== perfil[0].perfil_acesso
+    if (perfilAcessoMudou) {
+      if (!PERFIL_ACESSO_VALIDOS.includes(perfil_acesso)) {
+        return res.status(400).json({ erro: 'perfil_acesso precisa ser "operador" ou "coordenador"' })
+      }
+      novoPerfilAcesso = perfil_acesso
+
+      const afetados = await query('SELECT COUNT(*) as total FROM usuarios WHERE perfil = ? AND ativo = 1', [perfil[0].nome])
+      pessoasAfetadas = afetados[0].total
+    }
+
     const permUpdate = PERM_COLS.map(col => `${col} = ?`).join(', ')
     await run(
-      `UPDATE perfis SET rotulo = ?, metodo_login = ?, pode_acessar_painel = ?, cor = ?, descricao = ?, ${permUpdate} WHERE id = ?`,
+      `UPDATE perfis SET rotulo = ?, metodo_login = ?, pode_acessar_painel = ?, cor = ?, descricao = ?, perfil_acesso = ?, ${permUpdate} WHERE id = ?`,
       [
         rotulo || perfil[0].rotulo,
         metodo_login || perfil[0].metodo_login,
         temAcessoPainel ? 1 : 0,
         cor || perfil[0].cor,
         descricao !== undefined ? descricao : perfil[0].descricao,
+        novoPerfilAcesso,
         ...permValues, id
       ]
     )
     await sincronizarMatrizPermissoes(id, permValues)
+
+    // Aplica o teto do NOVO perfil_acesso só depois de sincronizarMatrizPermissoes
+    // (que reescreve, sem condição, as linhas derivadas das colunas legadas
+    // PERM_COLS) — se o corte viesse antes, essa sincronização religaria
+    // de volta qualquer permissão que o corte tivesse acabado de desligar.
+    if (perfilAcessoMudou) {
+      const permissoesAtuais = await query('SELECT modulo, acao FROM perfil_permissoes WHERE perfil_id = ? AND permitido = 1', [id])
+      const foraDoTeto = permissoesAtuais.filter(p => !dentroDoTeto(novoPerfilAcesso, `${p.modulo}.${p.acao}`))
+      for (const p of foraDoTeto) {
+        await run('UPDATE perfil_permissoes SET permitido = 0 WHERE perfil_id = ? AND modulo = ? AND acao = ?', [id, p.modulo, p.acao])
+      }
+    }
+
     await registrarAuditoria(req, { acao: 'editar', entidade: 'perfil', entidade_id: id })
-    res.json({ message: 'Perfil atualizado!' })
+    const resposta = { message: 'Perfil atualizado!' }
+    if (pessoasAfetadas !== null) resposta.pessoas_afetadas = pessoasAfetadas
+    res.json(resposta)
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
   }
@@ -442,6 +484,14 @@ exports.salvarPermissoes = async (req, res) => {
       }
       if (item.permitido && !(await temPermissao(req.userId, req.userPerfil, `${item.modulo}.${item.acao}`))) {
         return res.status(403).json({ erro: `Você não pode conceder "${item.modulo}.${item.acao}" porque seu próprio cargo não tem essa permissão.` })
+      }
+      // Teto do perfil de acesso (Fase 5, bloco B4): um cargo Operador ou
+      // Coordenador nunca recebe mais do que o teto do seu perfil — exceto
+      // se quem está concedendo é o Proprietário, que pode abrir uma
+      // exceção pontual pra um cargo específico (ex.: dar "unidades.criar"
+      // a um Coordenador de confiança).
+      if (item.permitido && req.userPerfil !== 'super_admin' && !dentroDoTeto(perfil[0].perfil_acesso, `${item.modulo}.${item.acao}`)) {
+        return res.status(403).json({ erro: `"${item.modulo}.${item.acao}" está fora do teto do perfil ${rotuloPerfilAcesso(perfil[0].perfil_acesso)} — só o Proprietário pode liberar essa exceção.` })
       }
     }
 
