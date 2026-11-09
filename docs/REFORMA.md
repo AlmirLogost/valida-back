@@ -366,4 +366,39 @@ duplicar cargo nenhum.
 
 **Pendências dentro do Bloco B** (não concluídas ainda nesta fase):
 fallback "auto-conferida" quando não existe revisor elegível (parte do
-B6, ver acima). Blocos C a K ainda não iniciados nesta fase.
+B6, ver acima).
+
+### Bloco C — Acessos (criar/editar cargo)
+
+A maior parte do bloco C já tinha sido construída na Fase 4 (lista,
+3 abas Permissões/Pessoas/Detalhes, "Ver como este cargo", duplicar,
+arquivar com substituto, restaurar, dedup). O que esta fase adicionou:
+
+- **Bug real corrigido**: cargo novo (`perfilController.criar`) e
+  cargo duplicado (`perfilController.duplicar`) não gravavam
+  `perfil_acesso` — nasciam com `NULL`, ou seja, SEM TETO NENHUM até
+  alguém abrir a aba Detalhes e trocar o perfil manualmente. `criar`
+  agora aceita `perfil_acesso` no corpo (padrão `'operador'`, o mais
+  restrito, se não vier); `duplicar` copia o da origem.
+- `Acessos.vue`: lista agrupada em Proprietário / Coordenador /
+  Operador (Proprietário sempre no topo); cada linha mostra o perfil
+  em texto pequeno. "+ Novo cargo" ganhou um passo novo antes do
+  modelo/nome: dois cartões grandes pra escolher o perfil primeiro —
+  os modelos oferecidos depois (Gerente/Líder pro Coordenador,
+  Operador/Financeiro pro Operador) são filtrados por esse perfil.
+- `AcessoDetalhe.vue`: aba Permissões esconde (cinza + 🔒 + tooltip
+  "Não disponível para o perfil X") qualquer ação fora do teto do
+  perfil do cargo — espelha `back/src/config/tetoPermissoes.js` só
+  pra UI, a validação real continua no back. "Marcar tudo" nunca
+  marca fora do teto. Aba Detalhes ganhou seletor de perfil pra cargo
+  personalizado (não aparece em cargo de sistema), com aviso de
+  impacto antes de salvar e mostrando quantas pessoas foram afetadas
+  depois (`pessoas_afetadas`, que o back já devolve desde o bloco B).
+
+**Não implementado nesta fase** (ficou de fora por escopo/tempo, não
+é um bug): exceção de permissão por PESSOA na tela de Equipe (ponto 8
+do bloco C do pedido) — hoje a exceção só existe no nível do CARGO
+(editando a matriz do cargo inteiro). Documentado aqui como pendência
+pra uma fase futura.
+
+Blocos D a K ainda não iniciados nesta fase.
