@@ -401,4 +401,45 @@ do bloco C do pedido) — hoje a exceção só existe no nível do CARGO
 (editando a matriz do cargo inteiro). Documentado aqui como pendência
 pra uma fase futura.
 
-Blocos D a K ainda não iniciados nesta fase.
+### Bloco D — Equipe
+
+O redesenho visual (cartão minimalista, barra fina de progresso, botão
+único "Ver tarefas (N)", menu "⋯", ponto âmbar "Falta o celular",
+alternador Cartões/Lista, busca/filtros, Ativos/Arquivados) já tinha
+sido construído na Fase 4, bloco F — confirmado de novo nesta fase,
+sem precisar mudar nada.
+
+**Bug real corrigido — formulário único de colaborador.** O pedido
+"UM formulário de colaborador, usado em Equipe/Unidades/Tarefas" já
+existia como componente (`ColaboradorCamposForm.vue`), mas por dentro
+só oferecia DOIS cargos fixos, hardcoded: "Operador" e "Líder". Um
+cargo personalizado criado em Acessos (ou até o "Gerente" de sistema)
+era **impossível de escolher** ao adicionar alguém por essa tela —
+mesmo em Tarefas.vue, mesmo em Equipe.vue. Corrigido: o formulário
+agora carrega os cargos de verdade (`GET /perfis`), agrupados por
+perfil de acesso (Coordenador/Operador); o Proprietário nunca aparece
+na lista. `useColaboradorPerfis.js`, que guardava aquele preset de
+permissões fixo (e que o back nem lia em `POST /usuarios` — os campos
+`perm_*` nunca eram usados ali), foi removido por ficar sem uso.
+
+Aproveitado pra fechar o ponto E4 do pedido ao mesmo tempo: nova prop
+`cargoFixo` trava a escolha quando se adiciona alguém de dentro do
+quadro de um cargo específico em Tarefas.vue.
+
+**Falha real de escalonamento de privilégio corrigida.**
+`usuarioController.criar`/`atualizar` não tinham guarda nenhuma contra
+`perfil = 'super_admin'` — qualquer pessoa com `equipe.criar/editar`
+(um Gerente ou Líder, cargos Coordenador comuns) podia criar um
+colaborador já como Proprietário, ou promover alguém existente a
+Proprietário editando o cargo — criando um segundo Dono sem passar
+por nenhum fluxo de transferência de propriedade (que não existe no
+sistema). Agora `criar` rejeita `super_admin` sempre; `atualizar`
+rejeita promover (só permite reenviar `super_admin` quando o alvo já
+é o Dono — reenvio idempotente ao editar outro campo sem tocar no
+cargo). A proteção contra REBAIXAR o Dono (da Fase 4) continua valendo.
+
+Aviso de impacto adicionado ao trocar o cargo de alguém (frontend) —
+"Ela passa a ter as permissões e as tarefas do cargo novo" antes de
+salvar; a troca já ficava registrada na auditoria do back.
+
+Blocos E a K ainda não iniciados nesta fase.
