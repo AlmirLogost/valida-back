@@ -263,6 +263,16 @@ const createTables = async () => {
     )
   `)
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS checklist_cargos (
+      id SERIAL PRIMARY KEY,
+      checklist_id INTEGER NOT NULL,
+      perfil_nome TEXT NOT NULL,
+      ativo INTEGER DEFAULT 1,
+      vinculado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(checklist_id, perfil_nome)
+    )
+  `)
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS checklist_datas (
       id SERIAL PRIMARY KEY,
       checklist_id INTEGER NOT NULL,

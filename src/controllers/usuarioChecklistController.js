@@ -9,13 +9,27 @@ exports.listarChecklists = async (req, res) => {
       return res.status(404).json({ erro: 'Usuário não encontrado' })
     }
 
+    // "Quem faz" uma tarefa (Fase 5, bloco E5) é a união do vínculo direto
+    // (usuario_checklists) com o vínculo por CARGO (checklist_cargos,
+    // resolvido pelo perfil atual da pessoa) — sem duplicar quando os dois
+    // existem ao mesmo tempo (o vínculo direto "ganha" e aparece como
+    // origem 'pessoa', já que é nele que os overrides de comissão vivem).
     const vinculados = await query(`
-      SELECT c.*, uc.id as vinculo_id, uc.bonus_override, uc.desconto_override
+      SELECT c.*, uc.id as vinculo_id, uc.bonus_override, uc.desconto_override, 'pessoa' as origem
       FROM checklists c
       INNER JOIN usuario_checklists uc ON c.id = uc.checklist_id
       WHERE uc.usuario_id = ? AND uc.ativo = 1 AND c.ativo = 1
-    `, [usuario_id])
-    
+
+      UNION ALL
+
+      SELECT c.*, NULL as vinculo_id, NULL as bonus_override, NULL as desconto_override, 'cargo' as origem
+      FROM checklists c
+      INNER JOIN checklist_cargos cc ON c.id = cc.checklist_id
+      WHERE cc.ativo = 1 AND c.ativo = 1
+        AND cc.perfil_nome = (SELECT perfil FROM usuarios WHERE id = ?)
+        AND c.id NOT IN (SELECT checklist_id FROM usuario_checklists WHERE usuario_id = ? AND ativo = 1)
+    `, [usuario_id, usuario_id, usuario_id])
+
     res.json(vinculados)
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
@@ -30,24 +44,32 @@ exports.listarDisponiveis = async (req, res) => {
       return res.status(404).json({ erro: 'Usuário não encontrado' })
     }
 
-    // Busca usuário e sua loja
-    const user = await query('SELECT loja_id FROM usuarios WHERE id = ?', [usuario_id])
+    // Busca usuário, sua loja e seu cargo
+    const user = await query('SELECT loja_id, perfil FROM usuarios WHERE id = ?', [usuario_id])
     if (!user[0]) return res.json([])
 
     const lojaId = user[0].loja_id
-    
-    // Checklists da loja que NÃO estão vinculados ao usuário
+    const perfilUsuario = user[0].perfil
+
+    // Checklists da loja que NÃO estão vinculados ao usuário — nem direto,
+    // nem por já vir do cargo dele (Fase 5, bloco E5): não faz sentido
+    // oferecer pra vincular de novo algo que a pessoa já recebe pelo cargo.
     const disponiveis = await query(`
       SELECT c.*
       FROM checklists c
-      WHERE c.loja_id = ? 
+      WHERE c.loja_id = ?
         AND c.ativo = 1
         AND c.id NOT IN (
-          SELECT checklist_id 
-          FROM usuario_checklists 
+          SELECT checklist_id
+          FROM usuario_checklists
           WHERE usuario_id = ? AND ativo = 1
         )
-    `, [lojaId, usuario_id])
+        AND c.id NOT IN (
+          SELECT checklist_id
+          FROM checklist_cargos
+          WHERE perfil_nome = ? AND ativo = 1
+        )
+    `, [lojaId, usuario_id, perfilUsuario])
     
     res.json(disponiveis)
   } catch (erro) {
@@ -185,12 +207,22 @@ exports.listarChecklistsLoja = async (req, res) => {
 
     const result = []
     for (const u of usuarios) {
+      // Mesma união de vínculo direto + vínculo por cargo usada em
+      // listarChecklists (Fase 5, bloco E5).
       const checklists = await query(`
-        SELECT c.*, uc.id as vinculo_id
+        SELECT c.*, uc.id as vinculo_id, 'pessoa' as origem
         FROM checklists c
         INNER JOIN usuario_checklists uc ON c.id = uc.checklist_id
         WHERE uc.usuario_id = ? AND uc.ativo = 1 AND c.ativo = 1
-      `, [u.id])
+
+        UNION ALL
+
+        SELECT c.*, NULL as vinculo_id, 'cargo' as origem
+        FROM checklists c
+        INNER JOIN checklist_cargos cc ON c.id = cc.checklist_id
+        WHERE cc.ativo = 1 AND c.ativo = 1 AND cc.perfil_nome = ?
+          AND c.id NOT IN (SELECT checklist_id FROM usuario_checklists WHERE usuario_id = ? AND ativo = 1)
+      `, [u.id, u.perfil, u.id])
       result.push({ usuario: u, checklists })
     }
 
