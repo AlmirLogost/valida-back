@@ -500,4 +500,35 @@ decide "quem faz" é `usuario_checklists`/`checklist_cargos`); por isso
 não foi migrado/apagado, e tarefas já existentes mantiveram o tipo
 histórico sem alteração — só tarefa nova usa a regra nova.
 
-Blocos F a K ainda não iniciados nesta fase.
+### Bloco F — Unidades
+
+Verificado contra o pedido: horários (editar, Seg–Sáb, salvar,
+reabrir), atalhos "copiar de segunda para todos" e "24h", salvar dados
+da unidade + horários na mesma ação, não sobrescrever horários reais
+quando a leitura falha, arquivar/restaurar com resumo de impacto e
+lista de arquivadas, seletor de unidade (1 toque, sem recarregar,
+busca quando mais de 5 unidades, "Todas as unidades", lembra a
+última escolhida em `localStorage`) — tudo isso já tinha sido
+construído nas Fases 3/4 e continua funcionando, confirmado sem
+precisar mudar nada.
+
+Único ajuste real: o campo Telefone, no formulário de unidade, estava
+espremido numa coluna fixa de 140px ao lado de Cidade/UF — ganhou a
+própria linha. "Horário obrigatório só se a unidade nasce aberta" não
+foi implementado — hoje não existe nenhum conceito de "unidade nasce
+aberta/fechada" no sistema, e o `*` no rótulo de horários nem era
+validado de verdade (criar uma unidade sem preencher horário sempre
+funcionou) — inventar esse conceito agora seria funcionalidade nova
+não pedida em nenhum outro lugar, fora do escopo desta fase.
+
+### Bloco G — Menu e Planos
+
+Verificado contra o pedido: sidebar (Dashboard, Unidades, Equipe,
+Tarefas, Acessos, Relatórios, Planos, sem "Configurações"), menu do
+perfil (Minha conta, Empresa, Configurações, Upgrade de plano, Ajuda,
+Sair, sem "Unidades"), página Planos (plano atual, status, dias de
+trial, próxima cobrança, uso vs. limite, comparação em colunas,
+toggle Mensal/Anual, FAQ, sem checkout real) — tudo construído na
+Fase 4, blocos B/C/G, e confirmado sem precisar mudar nada nesta fase.
+
+Blocos H a K ainda não iniciados nesta fase.
