@@ -45,6 +45,14 @@ exports.criar = async (req, res) => {
   try {
     const { nome, email, senha, perfil, loja_id, loja_ids, pin, celular, tipo_comissao, valor_tarefa_feita, valor_desconto, valor_mensal_fixo, desconto_mensal, periodo_comissao, periodo_inicio, periodo_fim } = req.body
 
+    // Ninguém se torna Proprietário por esta tela (Fase 5, bloco D) — cada
+    // conta já nasce com exatamente um Dono (super_admin), criado só no
+    // cadastro (registroController.js); não existe fluxo de "promover a
+    // Proprietário" por aqui.
+    if (perfil === 'super_admin') {
+      return res.status(403).json({ erro: 'Não é possível criar outro Proprietário por esta tela.' })
+    }
+
     // A loja do novo colaborador (e qualquer unidade extra em loja_ids,
     // pra gerente com mais de uma unidade) precisa pertencer à conta de
     // quem está criando.
@@ -134,9 +142,18 @@ exports.atualizar = async (req, res) => {
     // conta (getAdminId devolve o próprio id pra ele, não existe "outro
     // Dono" pra assumir o lugar). Rebaixar o Dono deixaria a conta sem
     // ninguém com acesso total, então essa troca é sempre recusada.
-    if (perfil !== 'super_admin') {
+    // Na outra direção (Fase 5, bloco D): "ninguém se torna Proprietário
+    // por esta tela" — promover outra pessoa pra super_admin por aqui
+    // criaria um segundo Dono sem passar por nenhum fluxo de transferência
+    // de propriedade (que não existe no sistema). Só é permitido mandar
+    // perfil='super_admin' quando o ALVO já é o Dono (reenvio idempotente
+    // do próprio valor atual, ex.: editar nome/telefone sem tocar no cargo).
+    if (perfil !== undefined) {
       const alvoAtual = await query('SELECT perfil FROM usuarios WHERE id = ?', [id])
-      if (alvoAtual[0]?.perfil === 'super_admin') {
+      if (perfil === 'super_admin' && alvoAtual[0]?.perfil !== 'super_admin') {
+        return res.status(403).json({ erro: 'Não é possível tornar alguém Proprietário por esta tela.' })
+      }
+      if (perfil !== 'super_admin' && alvoAtual[0]?.perfil === 'super_admin') {
         return res.status(403).json({ erro: 'O Dono da conta não pode ser rebaixado para outro cargo.' })
       }
     }
