@@ -179,3 +179,59 @@ mais tarde não precisar reconstruir o histórico pelos commits.
 Migrations desta fase: `012_escopo_cargo.sql`, `013_lider_operador.sql`,
 `014_relatorios_exportar.sql` — todas aditivas (`IF NOT EXISTS`/
 `ON CONFLICT ... DO UPDATE`), seguras de rodar de novo.
+
+## 6. Fase 4 — resumo das mudanças (blocos A a J, branch `reforma-acessos`)
+
+Pente-fino visual e de consistência por cima da Fase 3, mais dois bugs
+reais encontrados e corrigidos. Resumo técnico (o relatório em
+linguagem simples pro Dono está no final da conversa, não aqui):
+
+- **Bloco A**: nenhuma mudança — `.claude/settings.json` já estava
+  conforme pedido desde a Fase 3.
+- **Bloco B**: menu lateral e menu do perfil reorganizados (ver
+  AUDITORIA_TELAS.md). Seletor de unidade ganhou um valor especial
+  `'todas'` no `localStorage` (antes só guardava um ID de loja real) —
+  isso quebrou silenciosamente 3 telas que liam essa chave direto
+  (`Dashboard.vue`, `Equipe.vue`, `Execucoes.vue`), corrigido nos
+  blocos F/H/I.
+- **Bloco C**: nova página `Planos.vue`; `Assinatura.vue` removida
+  (rota `/assinatura` redireciona pra `/planos`).
+- **Bloco D**: `Tarefas.vue` troca abas fixas por uma tela de escolha
+  de cargo. Corrigido de passagem: o link "Ver tarefas" da Equipe
+  caía nessa tela nova em vez de ir direto pra pessoa.
+- **Bloco E**: nova rota `/acessos/:id` (`AcessoDetalhe.vue`).
+  Migration 015 (`perfis.descricao` + arquivamento de cargos
+  duplicados/órfãos achados no banco local: o cargo de sistema legado
+  "funcionario", cargos personalizados shadowed pelo de sistema, e um
+  cargo órfão de teste antigo). Duas regras novas de segurança no
+  back: ninguém concede a um cargo uma permissão que não tem; o Dono
+  da conta nunca pode ser rebaixado nem arquivado.
+- **Bloco F**: `Equipe.vue` reformada (cartões, alternador lista,
+  Ativos/Arquivados). Nenhuma mudança de back.
+- **Bloco G**: bug real corrigido em `Lojas.vue` — `salvarLoja()` só
+  chamava `PUT /lojas/:id/horarios` quando a lista local tinha pelo
+  menos 1 item e engolia qualquer erro dessa chamada em silêncio, então
+  limpar os horários (ou uma falha real de rede) nunca era salvo nem
+  avisado — o dono via "Salvo com sucesso!" mesmo quando os horários
+  não mudaram. Também protegido contra sobrescrever horários reais com
+  uma lista vazia quando a LEITURA deles falha ao abrir o formulário.
+- **Bloco H**: dois bugs reais corrigidos. (1) `AppLayout.vue` mapeava
+  `route.name` pro título do topo com nomes errados/faltando
+  (`Execucoes` → "Execuções" em vez de "Relatórios"; `Acessos` nem
+  estava no mapa, caía no fallback "Dashboard") — corrigido e
+  padronizado pra toda rota. (2) `Execucoes.vue` tinha sua própria
+  conta de comissão, duplicada e divergente da função usada em
+  `Equipe.vue`/`MinhasTarefas.vue` (`useComissao.js`): calculava só com
+  as tarefas do período do RELATÓRIO (podendo ser só "Hoje"), não do
+  período de pagamento da pessoa, e não considerava fechamentos —
+  substituído por uma chamada direta a `calcComissaoValor()`.
+- **Bloco I**: `Dashboard.vue` reformado (ver AUDITORIA_TELAS.md).
+  Nenhuma mudança de back.
+- **Bloco J**: lacuna encontrada e corrigida — cargo era arquivado
+  (soft delete) mas não tinha nenhum jeito de restaurar. Adicionado
+  `GET /perfis?arquivados=1` e `PUT /perfis/:id/restaurar`, mesmo
+  padrão já usado em unidades e pessoas.
+
+Nenhuma migration desta fase altera ou remove dados — a 015 só
+arquiva (`ativo = 0`) cargos que já eram inalcançáveis ou legados; tudo
+reversível manualmente se precisar.

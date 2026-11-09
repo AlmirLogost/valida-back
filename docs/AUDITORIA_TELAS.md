@@ -82,3 +82,25 @@ Scripts de teste cobrindo o back dessas mudanças:
 `back/scripts/teste_lider_operador.js` (rótulo Líder, tipo de tarefa,
 conferência) e `back/scripts/teste_relatorios_exportar.js` (nova permissão
 `relatorios.exportar`).
+
+## Fase 4 — telas alteradas (blocos A a J)
+
+| Bloco | Tela | O que mudou |
+|---|---|---|
+| A | `.claude/settings.json` | Já estava conforme o pedido — nenhuma mudança necessária (todas as permissões pedidas já tinham sido adicionadas na Fase 3). |
+| B | `Sidebar.vue` | Menu lateral perde "Configurações" (vira item do menu do perfil) e ganha "Planos". Menu do perfil perde "Unidades" (duplicado) e separa "Minha conta" de "Empresa". Seletor de unidade ganha busca (+5 unidades), opção "Todas as unidades" e `localStorage` protegido com try/catch. |
+| B | `Configuracoes.vue` | Nova aba "Empresa" com os dados de cobrança que antes ficavam dentro de "Minha Conta". Removida a aba "Plano & Assinatura" (virou a página Planos). |
+| C | `Planos.vue` (novo) | Substitui `Assinatura.vue` (rota antiga redireciona). Comparativo dos 3 planos em colunas, alternador mensal/anual, FAQ, fluxo de "avisar interesse" (sem checkout real). |
+| D | `Tarefas.vue` | Abas fixas "Líder/Operador" (Fase 3) trocadas por uma tela de escolha de cargo (um botão por cargo com gente na unidade + "Todos"), com contagem de pessoas/tarefas, breadcrumb e última escolha lembrada por unidade. |
+| E | `Acessos.vue` + `AcessoDetalhe.vue` (novo) | Cada cargo abre uma página própria (`/acessos/:id`) com 3 abas: Permissões (matriz agrupada por assunto, "ver como este cargo"), Pessoas (adicionar/remover) e Detalhes (nome/cor/descrição). "+ Novo cargo" parte de um modelo ou em branco. Nova regra: ninguém concede a um cargo uma permissão que não tem. |
+| F | `Equipe.vue` | Cartões sem cor no cargo, barra de progresso fina no lugar do anel, botão único "Ver tarefas", resto no menu "⋯". Alternador Cartões/Lista, busca, filtro por unidade, Ativos/Arquivados. "Excluir" virou "Arquivar". |
+| G | `Lojas.vue` | Corrigido o bug de "horários não gravam" (o front só chamava o salvamento quando a lista não estava vazia, e engolia erros em silêncio). Atalhos "copiar de segunda pra todos" e "24h"; telefone com máscara. |
+| H | `Execucoes.vue` (Relatórios) | 3 abas: Desempenho, Comissões, Histórico. Corrigido o título do topo (`AppLayout.vue` mostrava "Execuções"/"Dashboard" errado em várias telas) e a comissão que aparecia errada (cálculo duplicado e divergente do usado em Equipe/MinhasTarefas). |
+| I | `Dashboard.vue` | Bloco azul grande trocado por frase + barra fina. KPIs trocam de assunto (unidades abertas agora, pessoas ativas hoje, atrasadas, taxa com seta vs. ontem). "Atenção" ganha 2 motivos novos (unidade fechada no horário, pessoa sem tarefa feita) e estado "Tudo em dia". |
+| J | `Acessos.vue` | Cargo arquivado agora pode ser restaurado (faltava esse caminho de volta). |
+
+Scripts de teste novos desta fase: `back/scripts/teste_acessos_pagina_cargo.js`
+(descrição do cargo, regra "ninguém dá mais permissão do que tem", Dono nunca
+rebaixado/arquivado) e os blocos novos adicionados a
+`back/scripts/teste_acessos_unidades.js` (horários com lista vazia,
+arquivar/restaurar cargo).
