@@ -253,7 +253,7 @@ exports.atualizar = async (req, res) => {
       novoPerfilAcesso = perfil_acesso
 
       const afetados = await query('SELECT COUNT(*) as total FROM usuarios WHERE perfil = ? AND ativo = 1', [perfil[0].nome])
-      pessoasAfetadas = afetados[0].total
+      pessoasAfetadas = Number(afetados[0].total)
     }
 
     const permUpdate = PERM_COLS.map(col => `${col} = ?`).join(', ')
