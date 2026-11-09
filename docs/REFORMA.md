@@ -531,4 +531,30 @@ trial, próxima cobrança, uso vs. limite, comparação em colunas,
 toggle Mensal/Anual, FAQ, sem checkout real) — tudo construído na
 Fase 4, blocos B/C/G, e confirmado sem precisar mudar nada nesta fase.
 
-Blocos H a K ainda não iniciados nesta fase.
+### Bloco H — Dashboard
+
+Verificado contra o pedido: frase "Hoje: X de Y tarefas feitas" com
+barra fina (sem bloco azul grande), 4 números (Unidades abertas agora,
+Pessoas ativas hoje, Atrasadas, Taxa geral com seta vs. ontem),
+"Precisa de atenção agora" (máx. 5, com "Tudo em dia" no vazio),
+gráfico "Concluídas por dia" (7/15/30d), ranking de Unidades e Equipe
+com "Ver todos", "Atividade recente", e o caso especial de 1 unidade
+só (esconde o ranking, mostra "Tarefas de hoje por turno" no lugar) —
+tudo já construído na Fase 4, bloco I, confirmado sem precisar mudar
+nada nesta fase.
+
+### Bloco I — Relatórios
+
+Verificado contra o pedido: título só "Relatórios" (sem duplicar
+"Execuções"), frase-resumo com semáforo ("Hoje: 8 de 12 ... a pior é
+X"), três abas (Desempenho/Comissões/Histórico, Comissões escondida
+sem `comissoes.ver_todas`), mapa de calor dia×turno, "Tarefas
+problemáticas", tabela com Exportar CSV — tudo já construído na Fase
+4, bloco H, confirmado sem precisar mudar nada nesta fase. A
+inconsistência "comissão com 0 tarefas concluídas" (R$301 citada no
+pedido) já tinha sido investigada e corrigida nessa mesma passada da
+Fase 4: `Execucoes.vue` tinha uma conta de comissão própria, divergente
+de `useComissao.js` (a mesma usada em `Equipe.vue`/`MinhasTarefas.vue`)
+— hoje chama `calcComissaoValor()` direto, confirmado no código atual.
+
+Blocos J e K ainda não iniciados nesta fase.
