@@ -84,6 +84,44 @@ se a tela do celular não mudar mesmo depois de alterar o código:
    Android, é só plugar o celular no Mac e abrir
    `chrome://inspect` no Chrome do Mac.
 
+## Telas em formato app (abaixo de 960px) — o que conferir em cada uma
+
+Todas as rotas de `front/src/router/index.js` foram revisadas. "Feita"
+quer dizer: usa os componentes compartilhados (AppHeader, BottomNav,
+Sheet, FullScreenModal, PageFab, ListCard) onde fazem sentido, sem
+rolagem horizontal da página inteira. Abra cada endereço no celular
+(ou encolha a janela do navegador no Mac até menos de 960px de
+largura) e confira o que está descrito.
+
+| Rota | Tela | Status | O que conferir no celular |
+|---|---|---|---|
+| `/login` | Login (admin e celular+PIN) | **Feita** | Cartão único centralizado, teclado numérico ao tocar no PIN, botão "Entrar" ocupa a largura toda. |
+| `/cadastro` | Cadastro | **Feita** | Mesmo padrão de cartão centralizado; campos não dão zoom ao tocar. |
+| `/esqueci-senha` | Esqueci minha senha | **Feita** | Idem. |
+| `/reset-password` | Redefinir senha | **Feita** | Idem. |
+| `/dashboard` | Dashboard | **Feita** | Abre direto no "hub" de atalhos (grade de ícones); Acessos e Planos aparecem na grade (antes não apareciam). Tocar no menu (☰) no topo abre a gaveta lateral. |
+| `/lojas` | Unidades | **Feita** | "+ Nova Loja" abre em tela cheia (Cancelar/Título/Salvar no topo); dentro dele, editar horários e fechamentos funciona igual; unidades arquivadas aparecem como cartões com "Restaurar". |
+| `/equipe` | Equipe | **Feita** | Cartões de pessoa (já existia); menu (☰) abre a gaveta lateral; "+ Novo" abre o colaborador em tela cheia. |
+| `/tarefas` | Tarefas | **Feita** | Tela de escolher cargo em grade; abrir/editar tarefa é em tela cheia; "+ Adicionar colaborador" também. |
+| `/execucoes` | Relatórios | **Feita** | Abas com rolagem horizontal; botão "Filtrar" abre gaveta inferior com período/unidade/pessoa/tipo; números em grade 2x2; tabela vira lista de cartões; "⋯" tem o Exportar CSV; aba Histórico é uma linha do tempo de cartões com foto. |
+| `/acessos` | Acessos | **Feita** | Lista agrupada Coordenador/Operador; botão flutuante "+" abre a escolha de perfil; abrir um cargo vai pra tela cheia (ver linha abaixo). |
+| `/acessos/:id` | Detalhe do cargo | **Feita** | Cabeçalho mostra o nome do cargo com seta de voltar; matriz de permissões com interruptores grandes; "Alcance" abre numa gaveta inferior. |
+| `/planos` | Planos | **Feita** | Comparativo vira cartões deslizáveis na horizontal com bolinha indicadora; Mensal/Anual e perguntas frequentes já eram compatíveis. |
+| `/configuracoes` | Configurações | **Feita** | Abre como lista (Minha conta / Empresa / Sair); tocar um item abre em tela cheia com "Salvar" fixo embaixo. |
+| `/conferencia` | Conferência | **Já estava pronta** | Tela própria, pensada pro celular desde sempre (é pra onde o Proprietário cai ao entrar pelo celular); não foi mexida nesta tarefa. |
+| `/minhas-tarefas` | Minhas Tarefas | **Já estava pronta** | Tela própria em formato app desde a Fase 2 (é o app do Operador/Líder no celular); não foi mexida nesta tarefa. |
+
+**Não feito nesta passada** (ficou de fora, sem risco de rolagem
+horizontal, mas sem o polimento extra pedido):
+- O seletor de unidade (dentro do menu lateral) continua um menu
+  suspenso em vez de virar uma gaveta inferior própria — já fica
+  dentro de uma gaveta lateral que ocupa a tela toda no celular, então
+  não há problema de uso, só não é exatamente o padrão "Sheet" à parte.
+- Os modais menores de Tarefas (templates, confirmar exclusão, pausar
+  tarefa, editar colaborador do quadro) continuam no estilo de modal
+  centralizado de sempre — não viraram tela cheia. Já funcionam sem
+  rolagem horizontal, só não seguem o padrão novo.
+
 ## O que já está preparado no projeto
 
 - O sistema não usa nenhum "service worker" de verdade (nada fica
