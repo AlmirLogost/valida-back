@@ -3,6 +3,17 @@
 Guia simples pra abrir o sistema no celular enquanto ele está rodando
 no seu Mac, na mesma rede Wi-Fi.
 
+## ⚠️ Antes de mais nada: reinicie o `npm run dev` do front
+
+Encontrado nesta revisão: o processo do Vite (`npm run dev -- --host`)
+estava rodando havia mais de 1 dia — de ANTES da última mudança em
+`vite.config.mjs` (os cabeçalhos de no-cache). Mudança em
+`vite.config.mjs` **não recarrega sozinha** — precisa parar
+(Ctrl+C) e rodar `npm run dev -- --host` de novo. Enquanto isso não
+for feito, o celular pode estar vendo uma versão em cache de antes de
+qualquer ajuste de responsividade, mesmo com o código certo no disco.
+Isso sozinho pode explicar boa parte do "não é responsivo".
+
 ## 1. Deixe os dois servidores rodando no Mac
 
 No terminal, dentro de `back/`:
@@ -84,32 +95,47 @@ se a tela do celular não mudar mesmo depois de alterar o código:
    Android, é só plugar o celular no Mac e abrir
    `chrome://inspect` no Chrome do Mac.
 
-## Telas em formato app (abaixo de 960px) — o que conferir em cada uma
+## Bug real encontrado nesta revisão (causa provável do "não responsivo")
 
-Todas as rotas de `front/src/router/index.js` foram revisadas. "Feita"
-quer dizer: usa os componentes compartilhados (AppHeader, BottomNav,
-Sheet, FullScreenModal, PageFab, ListCard) onde fazem sentido, sem
-rolagem horizontal da página inteira. Abra cada endereço no celular
-(ou encolha a janela do navegador no Mac até menos de 960px de
-largura) e confira o que está descrito.
+O painel principal (`AppLayout.vue`) empurrava o conteúdo pra direita
+com `margin-left: 240px` (ou `64px` recolhido) usando um `:style`
+**inline**, calculado no JavaScript. Estilo inline sempre vence
+qualquer regra de CSS — inclusive a regra dentro de
+`@media (max-width: 960px)` que tentava zerar essa margem no celular.
+Na prática, isso significava que o conteúdo de quase toda tela
+(Dashboard, Unidades, Equipe, Tarefas, Relatórios, Acessos, Planos,
+Configurações) ficava sempre deslocado 240px/64px pra direita no
+celular, por cima de uma tela que já era estreita — exatamente a cara
+de "layout de desktop forçado, não se adapta". Corrigido: a margem
+agora vem de uma classe CSS (`.collapsed`), que o `@media` consegue
+sobrescrever normalmente.
 
-| Rota | Tela | Status | O que conferir no celular |
-|---|---|---|---|
-| `/login` | Login (admin e celular+PIN) | **Feita** | Cartão único centralizado, teclado numérico ao tocar no PIN, botão "Entrar" ocupa a largura toda. |
-| `/cadastro` | Cadastro | **Feita** | Mesmo padrão de cartão centralizado; campos não dão zoom ao tocar. |
-| `/esqueci-senha` | Esqueci minha senha | **Feita** | Idem. |
-| `/reset-password` | Redefinir senha | **Feita** | Idem. |
-| `/dashboard` | Dashboard | **Feita** | Abre direto no "hub" de atalhos (grade de ícones); Acessos e Planos aparecem na grade (antes não apareciam). Tocar no menu (☰) no topo abre a gaveta lateral. |
-| `/lojas` | Unidades | **Feita** | "+ Nova Loja" abre em tela cheia (Cancelar/Título/Salvar no topo); dentro dele, editar horários e fechamentos funciona igual; unidades arquivadas aparecem como cartões com "Restaurar". |
-| `/equipe` | Equipe | **Feita** | Cartões de pessoa (já existia); menu (☰) abre a gaveta lateral; "+ Novo" abre o colaborador em tela cheia. |
-| `/tarefas` | Tarefas | **Feita** | Tela de escolher cargo em grade; abrir/editar tarefa é em tela cheia; "+ Adicionar colaborador" também. |
-| `/execucoes` | Relatórios | **Feita** | Abas com rolagem horizontal; botão "Filtrar" abre gaveta inferior com período/unidade/pessoa/tipo; números em grade 2x2; tabela vira lista de cartões; "⋯" tem o Exportar CSV; aba Histórico é uma linha do tempo de cartões com foto. |
-| `/acessos` | Acessos | **Feita** | Lista agrupada Coordenador/Operador; botão flutuante "+" abre a escolha de perfil; abrir um cargo vai pra tela cheia (ver linha abaixo). |
-| `/acessos/:id` | Detalhe do cargo | **Feita** | Cabeçalho mostra o nome do cargo com seta de voltar; matriz de permissões com interruptores grandes; "Alcance" abre numa gaveta inferior. |
-| `/planos` | Planos | **Feita** | Comparativo vira cartões deslizáveis na horizontal com bolinha indicadora; Mensal/Anual e perguntas frequentes já eram compatíveis. |
-| `/configuracoes` | Configurações | **Feita** | Abre como lista (Minha conta / Empresa / Sair); tocar um item abre em tela cheia com "Salvar" fixo embaixo. |
-| `/conferencia` | Conferência | **Já estava pronta** | Tela própria, pensada pro celular desde sempre (é pra onde o Proprietário cai ao entrar pelo celular); não foi mexida nesta tarefa. |
-| `/minhas-tarefas` | Minhas Tarefas | **Já estava pronta** | Tela própria em formato app desde a Fase 2 (é o app do Operador/Líder no celular); não foi mexida nesta tarefa. |
+## Telas em formato app (360, 390, 768 e 1024px) — o que conferir em cada uma
+
+Todas as rotas de `front/src/router/index.js` foram revisadas nessas
+4 larguras (as duas primeiras são celular — 360px é o Android mais
+estreito comum, 390px é o iPhone padrão —, 768px é tablet retrato, e
+1024px já fica acima do limite de 960px, ou seja, layout de desktop
+completo). "Feita" quer dizer: usa os componentes compartilhados
+(AppHeader, BottomNav, Sheet, FullScreenModal, PageFab, ListCard) onde
+fazem sentido, sem rolagem horizontal da página inteira em nenhuma das
+4 larguras. Pra conferir no Mac sem precisar do celular: abra o
+DevTools (F12), ligue o modo responsivo e teste nessas 4 larguras.
+
+| Rota | Tela | 360/390px | 768px | 1024px |
+|---|---|---|---|---|
+| `/login`, `/cadastro`, `/esqueci-senha`, `/reset-password` | Telas de acesso | **Feita** (app) | **Feita** (app) | **Feita** (cartão centralizado, mesmo em qualquer largura) |
+| `/dashboard` | Dashboard | **Feita** (app) | **Feita** (app) | **Feita** (desktop completo) |
+| `/lojas` | Unidades | **Feita** (app) | **Feita** (app) | **Feita** (desktop completo) |
+| `/equipe` | Equipe | **Feita** (app) | **Feita** (app) | **Feita** (desktop completo) |
+| `/tarefas` | Tarefas | **Feita** (app; quadro kanban rola só dentro dele, não a página) | **Feita** (app) | **Feita** (desktop completo) |
+| `/execucoes` | Relatórios | **Feita** (app) | **Feita** (app) | **Feita** (desktop completo) |
+| `/acessos` | Acessos | **Feita** (app) | **Feita** (app) | **Feita** (desktop completo) |
+| `/acessos/:id` | Detalhe do cargo | **Feita** (app) | **Feita** (app) | **Feita** (desktop completo) |
+| `/planos` | Planos | **Feita** (app) | **Feita** (app) | **Feita** (desktop completo) |
+| `/configuracoes` | Configurações | **Feita** (app) | **Feita** (app) | **Feita** (desktop completo) |
+| `/conferencia` | Conferência | **Já estava pronta** (tela própria, formato app em qualquer largura) | Idem | Idem |
+| `/minhas-tarefas` | Minhas Tarefas | **Já estava pronta** (tela própria, formato app em qualquer largura) | Idem | Idem |
 
 **Não feito nesta passada** (ficou de fora, sem risco de rolagem
 horizontal, mas sem o polimento extra pedido):
