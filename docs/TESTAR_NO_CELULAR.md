@@ -125,8 +125,8 @@ DevTools (F12), ligue o modo responsivo e teste nessas 4 larguras.
 | Rota | Tela | 360/390px | 768px | 1024px |
 |---|---|---|---|---|
 | `/login`, `/cadastro`, `/esqueci-senha`, `/reset-password` | Telas de acesso | **Feita** (app) | **Feita** (app) | **Feita** (cartão centralizado, mesmo em qualquer largura) |
-| `/dashboard` | Dashboard | **Feita** (app) | **Feita** (app) | **Feita** (desktop completo) |
-| `/lojas` | Unidades | **Feita** (app) | **Feita** (app) | **Feita** (desktop completo) |
+| `/dashboard` | Início | **Feita** (app — seletor de unidade, progresso do dia, atenção agora) | **Feita** (app) | **Feita** (desktop completo) |
+| `/lojas` | Unidades | **Feita** (app — cartão completo, sem o bug do corpo escondido) | **Feita** (app) | **Feita** (desktop completo) |
 | `/equipe` | Equipe | **Feita** (app) | **Feita** (app) | **Feita** (desktop completo) |
 | `/tarefas` | Tarefas | **Feita** (app; quadro kanban rola só dentro dele, não a página) | **Feita** (app) | **Feita** (desktop completo) |
 | `/execucoes` | Relatórios | **Feita** (app) | **Feita** (app) | **Feita** (desktop completo) |
@@ -147,6 +147,88 @@ horizontal, mas sem o polimento extra pedido):
   tarefa, editar colaborador do quadro) continuam no estilo de modal
   centralizado de sempre — não viraram tela cheia. Já funcionam sem
   rolagem horizontal, só não seguem o padrão novo.
+
+## Navegação unificada (revisão mais recente)
+
+Antes, a Início (Dashboard) tinha uma barra inferior própria de 3 itens
+(Dashboard/Conferência/Painel) diferente da barra das outras telas (5
+itens: Painel/Tarefas/Equipe/Relatórios/Mais). Agora existe uma única
+barra, igual em toda página do app (abaixo de 960px):
+
+- **Início** · **Conferência** (botão central redondo, só aparece pra
+  quem tem a permissão de conferir tarefas) · **Equipe**.
+- Os itens e destinos ficam todos num lugar só —
+  `front/src/constants/navItemsApp.js` — pra trocar nome/rota sem caçar
+  em vários arquivos.
+- "Dashboard" virou "Início" em todo lugar visível (barra, título,
+  menu). A rota interna continua se chamando `Dashboard` (não muda URL
+  nem nome de arquivo).
+- O resto das telas (Unidades, Tarefas, Relatórios, Acessos, Planos,
+  Configurações, Minha conta, Ajuda, Sair) fica na gaveta que o ícone
+  de menu do cabeçalho abre — a mesma gaveta em toda página.
+- O Operador (`/minhas-tarefas`) mantém a própria barra de 3 itens
+  (Minhas tarefas · Histórico · Perfil) — tela independente, não usa
+  nada disso.
+
+**Tela Início**: os 3 cartões de números e a grade de botões saíram.
+No lugar: um seletor de unidade grande no topo (toca e abre uma gaveta
+com a lista de unidades, busca se tiver mais de 5, "Todas as unidades"
+pra quem tem mais de uma) e, embaixo, a barra de progresso do dia
+("Hoje: X de Y tarefas feitas") e a lista "Precisa de atenção agora".
+Trocar a unidade ali atualiza o app inteiro (mesmo mecanismo que o
+menu lateral já usava: evento `unidade-alterada` + `localStorage`).
+
+**Página Equipe**: ganhou um botão flutuante "+" no celular (antes era
+só o botão "+ Novo" dentro da barra de filtros, que ficava pequeno
+demais ali). O resto (cartões compactos, busca, pendentes/feitas do
+dia por pessoa, filtro de unidade) já estava pronto.
+
+**Página Unidades**: os cartões agora sempre mostram nome, cidade/UF,
+telefone (quando tiver) e o interruptor Aberta/Fechada — uma regra de
+CSS velha, de um design anterior do cartão, estava escondendo isso
+tudo no celular. "Lojas" virou "Unidades" em todo texto da tela
+(título, botão, mensagens), e o ícone/texto de excluir virou
+arquivar (a ação já era um arquivamento reversível por trás, só o
+rótulo estava errado).
+
+**Banner de trial**: no celular virou uma faixa de uma linha só
+("Trial [Plano] · N dias · Assinar") com um "×" pra dispensar até
+fechar a aba — exceto em modo somente leitura (assinatura
+suspensa/cancelada/trial vencido), que fica sempre visível, senão a
+pessoa esquece que não consegue criar ou editar nada.
+
+### Conferindo por perfil (sem logins de teste disponíveis nesta sessão)
+
+Não havia navegador disponível pra testar com 3 logins reais — a
+verificação foi por leitura de código/matriz de permissões:
+
+- **Proprietário** (`super_admin`): `hasPerm` sempre retorna `true` —
+  vê a barra completa (3 itens) e a gaveta completa.
+- **Coordenador**: vê os itens da barra/gaveta conforme a matriz do
+  cargo. Se o cargo não tiver a permissão de conferir tarefas, o botão
+  central de Conferência simplesmente não aparece (a barra fica com 2
+  itens, sem buraco no lugar). Mesma lógica pra cada item da gaveta.
+- **Operador**: nunca chega nessa barra/gaveta — usa `/minhas-tarefas`,
+  uma tela própria e independente (só o rótulo "Tarefas" → "Minhas
+  tarefas" mudou nela).
+
+### O que ficou faltando nesta passada
+
+- O ícone de menu do cabeçalho fica do lado esquerdo em toda página,
+  inclusive na Início — o pedido original descrevia o menu da Início à
+  direita, mas manter os cabeçalhos idênticos em toda tela (um só
+  componente, uma só posição) pareceu mais importante que diferenciar
+  essa tela, já que isso é parte do objetivo de unificar a navegação.
+- No celular, o botão de usuário no rodapé do menu lateral (avatar +
+  nome + selo do plano) ainda abre o popup antigo do desktop (Minha
+  conta/Empresa/Configurações/Upgrade de plano/Ajuda/Sair), que agora
+  duplica os itens novos adicionados direto na lista da gaveta. Não é
+  um bug (os dois caminhos levam pro lugar certo), só ficou redundante
+  — não removido por manter visível o nome/avatar/selo do plano no
+  celular, que seriam perdidos se esse botão fosse escondido ali.
+- A página Unidades não ganhou um botão flutuante "+" (ficou só a
+  Equipe, que foi o item pedido) — o botão "+ Nova unidade" do
+  cabeçalho da própria página já é compacto e funciona no celular.
 
 ## O que já está preparado no projeto
 
