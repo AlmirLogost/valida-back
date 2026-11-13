@@ -10,6 +10,7 @@ router.post('/usuarios', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitur
 router.put('/usuarios/:id', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('equipe.editar'), usuarioController.atualizar)
 router.delete('/usuarios/:id', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('equipe.arquivar'), usuarioController.deletar)
 router.put('/usuarios/:id/restaurar', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('equipe.arquivar'), usuarioController.restaurar)
+router.post('/usuarios/:id/novo-pin', auth, requirePlanoAtivo, bloquearEscritaSeSomenteLeitura, requirePermissao('equipe.editar'), usuarioController.gerarNovoPin)
 
 // Ver a própria comissão é sempre permitido (como já era); ver a comissão
 // de outra pessoa exige a permissão "ver todas" da matriz.

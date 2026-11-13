@@ -439,6 +439,33 @@ exports.relatorioComissao = async (req, res) => {
   }
 }
 
+// Gera um PIN novo pra um colaborador (Experiência do Cliente, bloco 3 —
+// "Reenviar convite") e já salva o hash — o PIN antigo some na hora,
+// nenhum dos dois fica valendo ao mesmo tempo. O PIN em texto puro só
+// existe nesta resposta, uma vez só; o back nunca guarda nem devolve de
+// novo depois disso.
+exports.gerarNovoPin = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { usuarioPertenceAConta } = require('../helpers/adminLojas')
+    if (!(await usuarioPertenceAConta(id, req.userId, req.userPerfil))) {
+      return res.status(404).json({ erro: 'Usuário não encontrado' })
+    }
+    const alvo = await query('SELECT whatsapp FROM usuarios WHERE id = ?', [id])
+    if (!alvo.length) return res.status(404).json({ erro: 'Usuário não encontrado' })
+    if (!alvo[0].whatsapp) {
+      return res.status(400).json({ erro: 'Esse colaborador não tem celular cadastrado — cadastre o celular antes de gerar um PIN novo.' })
+    }
+    const pinNovo = String(Math.floor(1000 + Math.random() * 9000))
+    const hash = await bcrypt.hash(pinNovo, 10)
+    await run('UPDATE usuarios SET pin = ? WHERE id = ?', [hash, id])
+    await registrarAuditoria(req, { acao: 'editar', entidade: 'usuario', entidade_id: id, detalhes: { acao_especifica: 'gerar_novo_pin' } })
+    res.json({ pin: pinNovo })
+  } catch (erro) {
+    res.status(500).json({ erro: erro.message })
+  }
+}
+
 // Restaura um colaborador arquivado (ativo = 0 -> 1), limpando quem/quando
 // arquivou. usuarioPertenceAConta não filtra pelo ativo da pessoa, então
 // funciona igual pra alguém já arquivado.
