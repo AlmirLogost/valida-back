@@ -219,13 +219,12 @@ verificação foi por leitura de código/matriz de permissões:
   direita, mas manter os cabeçalhos idênticos em toda tela (um só
   componente, uma só posição) pareceu mais importante que diferenciar
   essa tela, já que isso é parte do objetivo de unificar a navegação.
-- No celular, o botão de usuário no rodapé do menu lateral (avatar +
-  nome + selo do plano) ainda abre o popup antigo do desktop (Minha
-  conta/Empresa/Configurações/Upgrade de plano/Ajuda/Sair), que agora
-  duplica os itens novos adicionados direto na lista da gaveta. Não é
-  um bug (os dois caminhos levam pro lugar certo), só ficou redundante
-  — não removido por manter visível o nome/avatar/selo do plano no
-  celular, que seriam perdidos se esse botão fosse escondido ali.
+- ~~No celular, o botão de usuário no rodapé do menu lateral duplicava
+  itens da gaveta~~ — **corrigido**: removi a lista nova (Minha
+  conta/Configurações/Ajuda/Sair) que eu mesmo tinha adicionado direto
+  na gaveta, já que o botão de usuário no rodapé (avatar + nome + selo
+  do plano) já abre um popup com esses itens e mais — Empresa e Upgrade
+  de plano — tanto no celular quanto no desktop.
 - A página Unidades não ganhou um botão flutuante "+" (ficou só a
   Equipe, que foi o item pedido) — o botão "+ Nova unidade" do
   cabeçalho da própria página já é compacto e funciona no celular.
