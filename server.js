@@ -80,4 +80,19 @@ app.get('/{*splat}', (req, res) => {
 })
 
 const PORT = process.env.PORT || 3001
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 VALIDA na porta ${PORT}`))
+
+// Biblioteca de modelos prontos de tarefas — idempotente, confere antes
+// de aceitar conexões (ver src/config/seedTemplatesModelos.js); diferente
+// do seed.js principal, que só roda manualmente via src/config/init.js.
+// Rodar ANTES do listen (não só "em paralelo") evita a janela de corrida
+// em que uma segunda subida do servidor (ex.: dois terminais) poderia
+// checar "já existe?" e inserir duplicado antes da primeira terminar.
+require('./src/config/seedTemplatesModelos').seedTemplatesModelos()
+  .then(() => {
+    console.log('✅ Biblioteca de modelos de tarefas conferida')
+    app.listen(PORT, '0.0.0.0', () => console.log(`🚀 VALIDA na porta ${PORT}`))
+  })
+  .catch((e) => {
+    console.error('⚠️  Não foi possível conferir a biblioteca de modelos:', e.message)
+    app.listen(PORT, '0.0.0.0', () => console.log(`🚀 VALIDA na porta ${PORT}`))
+  })
