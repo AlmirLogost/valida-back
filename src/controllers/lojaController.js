@@ -183,6 +183,11 @@ exports.salvarHorarios = async (req, res) => {
       await run('INSERT INTO loja_horarios (loja_id, dia_semana, hora_abertura, hora_fechamento) VALUES (?,?,?,?)',
         [id, h.dia_semana, h.hora_abertura, h.hora_fechamento])
     }
+    if (req.body.horarios?.length > 0) {
+      const { marcarPasso } = require('../helpers/onboarding')
+      const adminId = await getAdminId(req.userId, req.userPerfil)
+      await marcarPasso(adminId, 'passo_unidade')
+    }
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ erro: e.message }) }
 }

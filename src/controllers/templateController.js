@@ -95,6 +95,10 @@ exports.aplicar = async (req, res) => {
         [result.lastID, item.titulo, item.descricao, item.ordem, item.critico]
       )
     }
+    const { getAdminId } = require('../helpers/adminLojas')
+    const { marcarPasso } = require('../helpers/onboarding')
+    const adminId = await getAdminId(req.userId, req.userPerfil)
+    await marcarPasso(adminId, 'passo_tarefa')
     res.json({ id: result.lastID, message: 'Template aplicado!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })

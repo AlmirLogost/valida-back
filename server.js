@@ -34,6 +34,7 @@ const meRoutes               = require('./src/routes/meRoutes')
 const resetSenhaRoutes       = require('./src/routes/resetSenhaRoutes')
 const registroRoutes         = require('./src/routes/registroRoutes')
 const subscriptionRoutes     = require('./src/routes/subscriptionRoutes')
+const onboardingRoutes       = require('./src/routes/onboardingRoutes')
 
 const app = express()
 // O servidor roda atrás do Nginx (proxy reverso). Sem isso, o Express vê
@@ -62,6 +63,7 @@ app.use('/api', templateRoutes)
 app.use('/api', checklistDataRoutes)
 app.use('/api', perfilRoutes)
 app.use('/api', subscriptionRoutes)
+app.use('/api', onboardingRoutes)
 
 // Servir frontend buildado (produção)
 app.use((req, res, next) => {

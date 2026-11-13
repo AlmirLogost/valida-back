@@ -45,6 +45,10 @@ exports.criar = async (req, res) => {
        b.rotulo_positivo||'Feito', b.rotulo_negativo||'Nao Feito',
        b.data_inicio||null, b.data_termino||null, b.repeticao_intervalo||1, b.tolerancia_min||30, tipoTarefa]
     )
+    const { getAdminId } = require('../helpers/adminLojas')
+    const { marcarPasso } = require('../helpers/onboarding')
+    const adminId = await getAdminId(req.userId, req.userPerfil)
+    await marcarPasso(adminId, 'passo_tarefa')
     res.json({ id: result.lastID, message: 'Checklist criado!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })

@@ -58,6 +58,14 @@ exports.registrar = async (req, res) => {
         [userId, planos[0].id, 'trial', trialFim.toISOString()]
       )
 
+      // Conta nova — onboarding começa do zero (nunca concluído por
+      // padrão). Contas de antes desta reforma são tratadas à parte (ver
+      // migrations/019_onboarding.sql e helpers/onboarding.js).
+      await runTx(
+        'INSERT INTO onboarding_progresso (admin_id) VALUES (?) ON CONFLICT (admin_id) DO NOTHING',
+        [userId]
+      )
+
       return { id: userId, nome: nomeFinal, email: emailNormalizado, perfil: 'super_admin' }
     })
 

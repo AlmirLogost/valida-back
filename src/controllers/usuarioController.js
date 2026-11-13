@@ -122,6 +122,8 @@ exports.criar = async (req, res) => {
       await run('INSERT INTO usuario_lojas (usuario_id, loja_id) VALUES (?, ?) ON CONFLICT DO NOTHING', [result.lastID, lid])
     }
     await registrarAuditoria(req, { acao: 'criar', entidade: 'usuario', entidade_id: result.lastID, detalhes: { nome, perfil } })
+    const { marcarPasso } = require('../helpers/onboarding')
+    await marcarPasso(adminIdCriar, 'passo_pessoa')
     res.json({ id: result.lastID, message: 'Usuário criado!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })

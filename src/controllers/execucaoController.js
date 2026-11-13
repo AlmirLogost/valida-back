@@ -162,7 +162,12 @@ exports.concluir = async (req, res) => {
       'UPDATE usuarios SET score = score + ? WHERE id = ?',
       [score, execucao.usuario_id]
     )
-    
+
+    const { getAdminId } = require('../helpers/adminLojas')
+    const { marcarPasso } = require('../helpers/onboarding')
+    const adminId = await getAdminId(req.userId, req.userPerfil)
+    await marcarPasso(adminId, 'passo_execucao')
+
     res.json({ message: 'Execução concluída!' })
   } catch (erro) {
     res.status(500).json({ erro: erro.message })
