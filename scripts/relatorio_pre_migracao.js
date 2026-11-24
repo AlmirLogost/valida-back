@@ -205,14 +205,14 @@ const CONSULTAS = [
     ) x`
   },
   {
-    titulo: 'Matriz de permissões (perfil_permissoes)',
-    tabelas: ['perfil_permissoes'],
+    titulo: 'Matriz de permissões antiga (perfil_permissoes, ou _legado depois da migração)',
+    tabelas: ['{{perfil_permissoes}}'],
     sql: `SELECT
       COUNT(*) AS linhas,
       COUNT(*) FILTER (WHERE permitido = 1) AS permitidas,
       COUNT(DISTINCT perfil_id) AS perfis_com_matriz,
       COUNT(DISTINCT modulo || '.' || acao) AS chaves_distintas
-    FROM perfil_permissoes`
+    FROM {{perfil_permissoes}}`
   },
   {
     titulo: 'Vínculos de unidade (usuario_lojas, perfil_lojas)',
@@ -264,8 +264,8 @@ const CONSULTAS = [
     sql: `SELECT COUNT(*) AS total FROM checklist_datas`
   },
   {
-    titulo: 'Execuções (D3, D6, D7)',
-    tabelas: ['execucoes', 'usuarios'],
+    titulo: 'Execuções antigas (execucoes, ou _legado depois da migração) (D3, D6, D7)',
+    tabelas: ['{{execucoes}}', 'usuarios'],
     sql: `SELECT
       COUNT(*) AS total,
       COUNT(*) FILTER (WHERE e.status = 'em_andamento') AS em_andamento,
@@ -276,11 +276,11 @@ const CONSULTAS = [
       COUNT(*) FILTER (WHERE e.status_conferencia = 'reprovada' OR e.status_conferencia = 'reprovado') AS conferencia_reprovada,
       COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM usuarios d WHERE d.id = e.usuario_id AND d.perfil = 'super_admin')) AS de_dono,
       COUNT(*) FILTER (WHERE e.loja_id IS NULL) AS sem_unidade
-    FROM execucoes e`
+    FROM {{execucoes}} e`
   },
   {
-    titulo: 'Respostas e fotos (execucoes_itens)',
-    tabelas: ['execucoes_itens'],
+    titulo: 'Respostas e fotos antigas (execucoes_itens, ou _legado depois da migração)',
+    tabelas: ['{{execucoes_itens}}'],
     sql: `SELECT
       COUNT(*) AS respostas,
       COUNT(*) FILTER (WHERE evidencia_url LIKE 'data:%' OR foto_url LIKE 'data:%') AS fotos_base64,
@@ -289,7 +289,7 @@ const CONSULTAS = [
         (CASE WHEN foto_url LIKE 'data:%' THEN octet_length(foto_url) ELSE 0 END)
       ) / 1048576.0, 1), 0) AS fotos_base64_mb,
       COUNT(*) FILTER (WHERE (evidencia_url IS NOT NULL AND evidencia_url NOT LIKE 'data:%') OR (foto_url IS NOT NULL AND foto_url NOT LIKE 'data:%')) AS fotos_em_outro_formato
-    FROM execucoes_itens`
+    FROM {{execucoes_itens}}`
   },
   {
     titulo: 'Assinaturas (subscriptions) (P1, D13)',
@@ -334,6 +334,71 @@ const CONSULTAS = [
   }
 ]
 
+// Depois da migração: contagens das tabelas novas (puladas se não existirem).
+const NOVAS = [
+  {
+    titulo: 'Tabelas novas: empresas, unidades e pessoas',
+    tabelas: ['empresas', 'admins', 'unidades', 'colaboradores', 'cargos', 'perfis_acesso'],
+    sql: `SELECT
+      (SELECT COUNT(*) FROM empresas) AS empresas,
+      (SELECT COUNT(*) FROM admins) AS admins,
+      (SELECT COUNT(*) FROM unidades) AS unidades,
+      (SELECT COUNT(*) FROM unidades WHERE arquivado_em IS NULL) AS unidades_ativas,
+      (SELECT COUNT(*) FROM colaboradores WHERE excluido_em IS NULL) AS pessoas,
+      (SELECT COUNT(*) FROM colaboradores WHERE excluido_em IS NULL AND situacao = 'ativo') AS pessoas_ativas,
+      (SELECT COUNT(*) FROM colaboradores WHERE excluido_em IS NULL AND situacao = 'aguardando') AS pessoas_aguardando,
+      (SELECT COUNT(*) FROM colaboradores WHERE excluido_em IS NULL AND celular IS NULL) AS pessoas_sem_celular,
+      (SELECT COUNT(*) FROM colaboradores WHERE excluido_em IS NULL AND pin_hash IS NOT NULL) AS pessoas_com_pin,
+      (SELECT COUNT(*) FROM cargos WHERE arquivado_em IS NULL) AS cargos_ativos,
+      (SELECT COUNT(*) FROM perfis_acesso WHERE arquivado_em IS NULL) AS perfis_de_acesso`
+  },
+  {
+    titulo: 'Tabelas novas: tarefas, execuções e fotos',
+    tabelas: ['tarefas', 'execucoes_legado', 'fotos'],
+    sql: `SELECT
+      (SELECT COUNT(*) FROM tarefas) AS tarefas,
+      (SELECT COUNT(*) FROM tarefas WHERE ativa AND arquivado_em IS NULL) AS tarefas_ativas,
+      (SELECT COUNT(*) FROM tarefas WHERE pai_id IS NOT NULL) AS sub_itens,
+      (SELECT COUNT(*) FROM tarefas WHERE cargo_id IS NOT NULL) AS tarefas_de_cargo,
+      (SELECT COUNT(*) FROM execucoes) AS execucoes,
+      (SELECT COUNT(*) FROM execucoes WHERE estado = 'a_fazer') AS a_fazer,
+      (SELECT COUNT(*) FROM execucoes WHERE estado = 'feita') AS feitas,
+      (SELECT COUNT(*) FROM execucoes WHERE estado = 'nao_feita') AS nao_feitas,
+      (SELECT COUNT(*) FROM execucoes WHERE estado = 'dispensada') AS dispensadas,
+      (SELECT COUNT(*) FROM execucoes WHERE estado IN ('cancelada', 'na')) AS canceladas_ou_na,
+      (SELECT COUNT(*) FROM execucoes WHERE desfeita_em IS NOT NULL) AS desfeitas,
+      (SELECT COUNT(*) FROM execucoes WHERE conferencia = 'aprovada') AS aprovadas,
+      (SELECT COUNT(*) FROM execucoes WHERE conferencia = 'reaberta') AS reabertas,
+      (SELECT COUNT(*) FROM fotos) AS fotos,
+      (SELECT COALESCE(ROUND(SUM(tamanho) / 1048576.0, 2), 0) FROM fotos) AS fotos_mb`
+  },
+  {
+    titulo: 'Tabelas novas: pedidos, ações, logins e registro',
+    tabelas: ['pedidos', 'acoes', 'logins', 'registro_atividades', 'regras_bonus'],
+    sql: `SELECT
+      (SELECT COUNT(*) FROM pedidos WHERE estado = 'pend') AS pedidos_pendentes,
+      (SELECT COUNT(*) FROM pedidos WHERE estado = 'ok') AS pedidos_aprovados,
+      (SELECT COUNT(*) FROM pedidos WHERE estado = 'no') AS pedidos_negados,
+      (SELECT COUNT(*) FROM acoes WHERE estado = 'aberta') AS acoes_abertas,
+      (SELECT COUNT(*) FROM acoes WHERE estado = 'resolvida') AS acoes_resolvidas,
+      (SELECT COUNT(*) FROM logins) AS logins,
+      (SELECT COUNT(*) FROM registro_atividades) AS registro_atividades,
+      (SELECT COUNT(*) FROM regras_bonus) AS regras_bonus`
+  }
+]
+
+// Nomes das tabelas antigas que mudaram de nome na migração (027 e 034).
+function nomes(migrado) {
+  return migrado
+    ? { execucoes: 'execucoes_legado', execucoes_itens: 'execucoes_itens_legado', perfil_permissoes: 'perfil_permissoes_legado' }
+    : { execucoes: 'execucoes', execucoes_itens: 'execucoes_itens', perfil_permissoes: 'perfil_permissoes' }
+}
+const trocar = (texto, n) => texto.replace(/\{\{(\w+)\}\}/g, (_, k) => n[k])
+function montar(migrado) {
+  const n = nomes(migrado)
+  return [...CONSULTAS, ...(migrado ? NOVAS : [])].map((c) => ({ ...c, sql: trocar(c.sql, n), tabelas: c.tabelas.map((t) => trocar(t, n)) }))
+}
+
 // Tabelas novas que não podem existir ainda (colisão / migração já feita).
 const TABELAS_PARA_CONFERIR = [
   'password_resets', 'schema_migrations', 'empresas', 'admins', 'pessoas', 'unidades',
@@ -354,7 +419,7 @@ function conferirConsulta(sql) {
 }
 
 const SQL_EXISTE_TABELA = `SELECT to_regclass($1) IS NOT NULL AS existe`
-const todas = [SQL_EXISTE_TABELA, ...CONSULTAS.map((c) => c.sql)]
+const todas = [SQL_EXISTE_TABELA, ...montar(false).map((c) => c.sql), ...montar(true).map((c) => c.sql)]
 for (const sql of todas) {
   const problema = conferirConsulta(sql)
   if (problema) {
@@ -414,9 +479,10 @@ async function main() {
     for (const t of TABELAS_PARA_CONFERIR) {
       console.log(`  ${t}: ${(await tabelaExiste(t)) ? 'existe' : 'não existe'}`)
     }
-    console.log('')
+    const migrado = await tabelaExiste('execucoes_legado')
+    console.log(`\nSituação: ${migrado ? 'banco JÁ migrado (as tabelas antigas são lidas pelos nomes *_legado; no fim, as tabelas novas)' : 'banco ainda NÃO migrado'}\n`)
 
-    for (const c of CONSULTAS) {
+    for (const c of montar(migrado)) {
       console.log(`## ${c.titulo}`)
       const faltando = []
       for (const t of c.tabelas) if (!(await tabelaExiste(t))) faltando.push(t)
