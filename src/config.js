@@ -30,5 +30,5 @@ module.exports = {
   fotoMaxMb: Number(process.env.FOTO_MAX_MB) || 5,
   // Envio offline: diferença de relógio acima disso fica marcada para o gerente.
   relogioAlertaS: 300,
-  versaoMinimaBanco: 42
+  versaoMinimaBanco: 43
 }

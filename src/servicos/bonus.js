@@ -19,7 +19,7 @@ function regraNoDia(regras, data) {
   return r
 }
 
-async function calcular(dbx, colaboradorId, de, ate, agora = new Date(), fuso = 'America/Sao_Paulo') {
+async function calcular(dbx, colaboradorId, de, ate, agora = tempo.agora(), fuso = 'America/Sao_Paulo') {
   const regras = await dbx.q('SELECT * FROM regras_bonus WHERE colaborador_id = $1 ORDER BY vigente_desde', [colaboradorId])
   const hoje = tempo.hoje(fuso, agora)
   const execs = await dbx.q(

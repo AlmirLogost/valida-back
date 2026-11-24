@@ -15,8 +15,8 @@ async function conferirBloqueio(tipo, identificador) {
   }
 }
 
-async function falhou(tipo, identificador) {
-  const { maxFalhas, janelaMin, bloqueioMin } = config.tentativas
+async function falhou(tipo, identificador, limite = {}) {
+  const { maxFalhas, janelaMin, bloqueioMin } = { ...config.tentativas, ...limite }
   await db.exec(
     `INSERT INTO login_tentativas (chave_hash, tipo, falhas, primeira_falha_em)
      VALUES ($1, $2, 1, now())

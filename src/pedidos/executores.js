@@ -370,8 +370,13 @@ E.lib = {
   chaves: () => ['lib'],
   aprovador: 'lib',
   async preparar() { throw invalido('A liberação é pedida no login.') },
+  // Gera um código de 6 números para quem aprovou passar à pessoa (aparece
+  // uma vez; no pedido fica só o hash). A pessoa pode entrar com o código ou
+  // simplesmente tentando de novo.
   async executar(db, ctx, p) {
-    return { colaborador_id: p.colaborador_id, unidade_id: p.unidade_id, usado_em: null }
+    const { randomInt } = require('crypto')
+    const codigo = String(randomInt(0, 1000000)).padStart(6, '0')
+    return { colaborador_id: p.colaborador_id, unidade_id: p.unidade_id, usado_em: null, codigo }
   }
 }
 

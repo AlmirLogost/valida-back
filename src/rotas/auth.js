@@ -30,6 +30,16 @@ function respostaSessao(ator, acesso, extra = {}) {
   }
 }
 
+// Quem pode liberar a entrada na unidade (Coordenação com "lib"); só nome e cargo.
+async function aprovadores(unidadeId, menosId) {
+  return db.q(
+    `SELECT c.nome, cg.nome AS cargo FROM colaboradores c JOIN cargos cg ON cg.id = c.cargo_id
+     JOIN perfil_permissoes pp ON pp.perfil_id = COALESCE(c.perfil_acesso_id, cg.perfil_acesso_id) AND pp.chave = 'lib' AND pp.permitido
+     WHERE c.situacao = 'ativo' AND c.excluido_em IS NULL AND c.id <> $2
+       AND EXISTS (SELECT 1 FROM colaborador_unidades cu WHERE cu.colaborador_id = c.id AND cu.unidade_id = $1)
+     ORDER BY (lower(cg.nome) = 'gerente') DESC, c.nome LIMIT 5`, [unidadeId, menosId])
+}
+
 // ---- Admin: e-mail + senha --------------------------------------------------
 r.post('/auth/admin/entrar', async (req, res) => {
   const email = v.email(req.body.email, { obrigatorio: true })
@@ -46,6 +56,23 @@ r.post('/auth/admin/entrar', async (req, res) => {
   if (ator.situacaoEmpresa === 'bloqueada') throw proibido('A conta está bloqueada. Fale com o responsável pela assinatura.')
   await registrar(db, { empresaId: ator.empresaId, ator, acao: 'login.admin' })
   res.json(respostaSessao(ator, acesso))
+})
+
+// ---- Reconhecer pelo celular (antes do PIN, §10) ----------------------------
+// Mostra só o primeiro nome, o cargo e a unidade. Limitado por IP (cada
+// consulta conta como tentativa) para não virar lista de pessoas.
+r.post('/auth/quem', async (req, res) => {
+  const celular = v.celular(req.body.celular, { obrigatorio: true })
+  const chave = `quem:${req.ip}`
+  await tentativas.conferirBloqueio('equipe', chave)
+  // Na unidade todos podem sair pelo mesmo IP (Wi-Fi): limite mais largo.
+  await tentativas.falhou('equipe', chave, { maxFalhas: 30 })
+  const p = await db.um(
+    `SELECT c.nome, cg.nome AS cargo, cg.perfil, u.nome AS unidade FROM colaboradores c
+     JOIN cargos cg ON cg.id = c.cargo_id JOIN unidades u ON u.id = c.unidade_principal_id
+     WHERE c.celular = $1 AND c.excluido_em IS NULL AND c.situacao <> 'arquivado' ORDER BY c.id LIMIT 1`, [celular])
+  if (!p) throw naoEncontrado('Celular não encontrado. Fale com o admin.')
+  res.json({ nome: String(p.nome).split(' ')[0], cargo: p.cargo, perfil: p.perfil, unidade: p.unidade })
 })
 
 // ---- Equipe: celular + PIN + localização ------------------------------------
@@ -94,7 +121,7 @@ r.post('/auth/entrar', async (req, res) => {
   // Horário de login da pessoa (janela + tolerância). Livre se não definido.
   const me = await db.um('SELECT login_ini, login_fim, login_tol_min FROM colaboradores WHERE id = $1', [ator.id])
   if (me.login_ini && me.login_fim) {
-    const agora = tempo.minutos(tempo.horaAgora(unidade.fuso))
+    const agora = tempo.minutos(tempo.horaAgora(unidade.fuso, tempo.agora()))
     const ini = tempo.minutos(me.login_ini) - (me.login_tol_min || 0)
     const fim = tempo.minutos(me.login_fim)
     if (agora < ini || agora > fim) {
@@ -107,7 +134,7 @@ r.post('/auth/entrar', async (req, res) => {
   const dispensa = acesso.chaves.has('dispensa')
   if (!dispensa && unidade.lat !== null && unidade.lng !== null) {
     if (req.body.lat === undefined || req.body.lng === undefined || req.body.lat === null || req.body.lng === null) {
-      return res.status(400).json({ estado: 'localizacao_necessaria', erro: 'Pedimos a localização só agora. Não acompanhamos você durante o dia.' })
+      return res.status(400).json({ estado: 'localizacao_necessaria', unidade: unidade.nome, erro: 'Pedimos a localização só agora. Não acompanhamos você durante o dia.' })
     }
     lat = v.numero(req.body.lat, 'a latitude', { obrigatorio: true, min: -90, max: 90 })
     lng = v.numero(req.body.lng, 'a longitude', { obrigatorio: true, min: -180, max: 180 })
@@ -118,10 +145,15 @@ r.post('/auth/entrar', async (req, res) => {
       // Liberação aprovada e ainda não usada: vale UMA entrada.
       const lib = await db.tx(async (t) => {
         const p = await t.um(
-          `SELECT id FROM pedidos WHERE empresa_id = $1 AND tipo = 'lib' AND estado = 'ok' AND solicitante_tipo = 'colaborador'
+          `SELECT id, resultado->>'codigo_hash' AS codigo_hash FROM pedidos WHERE empresa_id = $1 AND tipo = 'lib' AND estado = 'ok' AND solicitante_tipo = 'colaborador'
              AND solicitante_id = $2 AND unidade_id = $3 AND (resultado->>'usado_em') IS NULL
              AND decidido_em > now() - interval '24 hours'
            ORDER BY decidido_em DESC LIMIT 1 FOR UPDATE`, [ator.empresaId, ator.id, unidade.id])
+        // Com código digitado, ele precisa conferir.
+        if (p && req.body.codigo_liberacao !== undefined && req.body.codigo_liberacao !== null) {
+          const cod = String(req.body.codigo_liberacao).replace(/\D/g, '')
+          if (p.codigo_hash !== sha256(`${p.id}:${cod}`)) throw invalido('Código incorreto.')
+        }
         if (p) await t.exec(`UPDATE pedidos SET resultado = jsonb_set(resultado, '{usado_em}', to_jsonb(now())) WHERE id = $1`, [p.id])
         return p
       })
@@ -138,9 +170,9 @@ r.post('/auth/entrar', async (req, res) => {
           detalhe: `${unidade.nome} · a ${distancia} m (raio ${unidade.raio_m} m) · motivo: ${motivo.replace(/_/g, ' ')}`,
           payload: { colaborador_id: ator.id, unidade_id: unidade.id, motivo, distancia_m: distancia }
         })
-        return res.status(202).json({ estado: 'aguardando_liberacao', pedido_id: pedido.id, distancia_m: distancia })
+        return res.status(202).json({ estado: 'aguardando_liberacao', pedido_id: pedido.id, distancia_m: distancia, raio_m: unidade.raio_m, unidade: unidade.nome, aprovadores: await aprovadores(unidade.id, ator.id) })
       } else {
-        return res.status(403).json({ estado: 'fora_do_local', distancia_m: distancia, raio_m: unidade.raio_m, erro: 'Você está fora do local da unidade.' })
+        return res.status(403).json({ estado: 'fora_do_local', distancia_m: distancia, raio_m: unidade.raio_m, unidade: unidade.nome, aprovadores: await aprovadores(unidade.id, ator.id), erro: 'Você está fora do local da unidade.' })
       }
     }
   }
@@ -150,14 +182,37 @@ r.post('/auth/entrar', async (req, res) => {
   const primeira = await db.um(
     `SELECT MIN(e.hora_prevista) AS h FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id
      WHERE e.colaborador_id = $1 AND e.unidade_id = $2 AND e.data = $3 AND t.pai_id IS NULL AND e.estado IN ('a_fazer', 'feita', 'nao_feita')`,
-    [ator.id, unidade.id, tempo.hoje(unidade.fuso)])
-  const atraso = primeira && primeira.h ? Math.max(0, tempo.minutos(tempo.horaAgora(unidade.fuso)) - tempo.minutos(primeira.h)) : null
+    [ator.id, unidade.id, tempo.hoje(unidade.fuso, tempo.agora())])
+  const atraso = primeira && primeira.h ? Math.max(0, tempo.minutos(tempo.horaAgora(unidade.fuso, tempo.agora())) - tempo.minutos(primeira.h)) : null
   await db.exec(
     `INSERT INTO logins (empresa_id, colaborador_id, unidade_id, lat, lng, distancia_m, dentro_raio, liberado_por_pedido_id, atraso_min)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
     [ator.empresaId, ator.id, unidade.id, lat, lng, distancia, dentro, liberadoPor, atraso])
   await registrar(db, { empresaId: ator.empresaId, unidadeId: unidade.id, ator, acao: 'login.equipe', detalhe: { dentro_raio: dentro, liberado_por_pedido_id: liberadoPor, dispensa } })
-  res.json(respostaSessao(ator, acesso, { estado: liberadoPor ? 'liberado' : 'no_local', unidade_id: unidade.id }))
+  const quemLiberou = liberadoPor ? await db.um(
+    `SELECT COALESCE(c.nome, a.nome) AS nome, cg.nome AS cargo FROM pedidos p
+     LEFT JOIN colaboradores c ON (p.resultado->>'decidido_por_tipo') = 'colaborador' AND c.id = p.decidido_por
+     LEFT JOIN cargos cg ON cg.id = c.cargo_id
+     LEFT JOIN admins a ON (p.resultado->>'decidido_por_tipo') = 'admin' AND a.id = p.decidido_por
+     WHERE p.id = $1`, [liberadoPor]) : null
+  res.json(respostaSessao(ator, acesso, {
+    estado: liberadoPor ? 'liberado' : 'no_local',
+    unidade_id: unidade.id,
+    // Para a tela "Presença confirmada" / "Liberado".
+    entrada: {
+      em: tempo.agora(), unidade: unidade.nome, distancia_m: distancia, raio_m: unidade.raio_m, dispensa,
+      primeira_tarefa: primeira && primeira.h ? String(primeira.h).slice(0, 5) : null,
+      atraso_min: atraso, tolerancia_min: me.login_tol_min || 0,
+      // Desconto de atraso da regra de bônus vigente (se a entrada passou da tolerância).
+      desconto_atraso: await (async () => {
+        const rg = await db.um(
+          `SELECT atraso_ativo, atraso_tol_min, atraso_desconto FROM regras_bonus WHERE colaborador_id = $1 AND vigente_desde <= $2
+           ORDER BY vigente_desde DESC LIMIT 1`, [ator.id, tempo.hoje(unidade.fuso, tempo.agora())])
+        return rg && rg.atraso_ativo && atraso !== null && atraso > (rg.atraso_tol_min || 0) ? Number(rg.atraso_desconto) : null
+      })(),
+      liberado_por: quemLiberou
+    }
+  }))
 })
 
 // Renova a sessão enquanto ela ainda vale (equipe 12 h, admin 7 dias).
@@ -238,7 +293,12 @@ r.put('/auth/pin', autenticar, async (req, res) => {
 
 // Quem sou eu.
 r.get('/eu', autenticar, async (req, res) => {
+  const e = await db.um('SELECT nome, plano, situacao, trial_ate FROM empresas WHERE id = $1', [req.ator.empresaId])
+  const pend = req.acesso.admin ? await db.um(`SELECT COUNT(*)::int AS n FROM pedidos WHERE empresa_id = $1 AND estado = 'pend'`, [req.ator.empresaId]) : null
   res.json({
+    agora: tempo.agora(),
+    empresa: e,
+    pedidos_pendentes: pend ? pend.n : null,
     tipo: req.ator.tipo, id: req.ator.id, nome: req.ator.nome, empresa_id: req.ator.empresaId,
     situacao_empresa: req.ator.situacaoEmpresa,
     perfil: req.acesso.admin ? 'admin' : req.acesso.perfilCargo,

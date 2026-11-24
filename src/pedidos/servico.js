@@ -10,7 +10,7 @@
 const db = require('../db')
 const executores = require('./executores')
 const { registrar } = require('../lib/registro')
-const { cifrar, decifrar } = require('../lib/segredos')
+const { cifrar, decifrar, sha256 } = require('../lib/segredos')
 const { proibido, conflito, naoEncontrado, invalido } = require('../lib/erros')
 const { tem } = require('../auth/sessao')
 
@@ -22,8 +22,8 @@ function ctxDe(req) {
 
 // Separa o que é público do PIN (que nunca vai para o registro nem fica em claro).
 function semPin(resultado) {
-  if (!resultado || !('pin' in resultado)) return resultado
-  const { pin, ...resto } = resultado
+  if (!resultado || (!('pin' in resultado) && !('codigo' in resultado))) return resultado
+  const { pin, codigo, ...resto } = resultado
   return resto
 }
 
@@ -82,6 +82,8 @@ async function decidir(req, pedidoId, aprovar, motivo) {
       if (resultado && resultado.pin && !(p.solicitante_tipo === req.ator.tipo && p.solicitante_id === req.ator.id)) {
         guardado.pin_cifrado = cifrar(resultado.pin)
       }
+      // Código de liberação ("lib"): só o hash, preso a este pedido.
+      if (resultado && resultado.codigo) guardado.codigo_hash = sha256(`${p.id}:${resultado.codigo}`)
     } else {
       if (ex.negar) await ex.negar(t, ctx, p.payload)
       guardado.motivo = motivo || null
@@ -114,7 +116,7 @@ async function revelarPin(req, pedidoId) {
 }
 
 const CAMPOS_LISTA = `id, unidade_id, solicitante_tipo, solicitante_id, tipo, titulo, detalhe, estado, decidido_por, decidido_em,
-  (resultado - 'pin_cifrado') AS resultado, (resultado ? 'pin_cifrado') AS tem_pin_para_ver, visto_pelo_solicitante_em, criado_em`
+  (resultado - 'pin_cifrado' - 'codigo_hash') AS resultado, (resultado ? 'pin_cifrado') AS tem_pin_para_ver, visto_pelo_solicitante_em, criado_em`
 
 async function listar(req, { meus, estado }) {
   const params = [req.ator.empresaId]

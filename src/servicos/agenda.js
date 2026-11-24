@@ -197,7 +197,7 @@ async function avisarVencidas(dbx, empresaId, agora) {
 }
 
 // ---- rodada -----------------------------------------------------------------
-async function processarUnidade(dbx, unidadeId, agora = new Date()) {
+async function processarUnidade(dbx, unidadeId, agora = tempo.agora()) {
   const u = await dbx.um('SELECT * FROM unidades WHERE id = $1 AND arquivado_em IS NULL', [unidadeId])
   if (!u) return null
   const hoje = tempo.hoje(u.fuso, agora)
@@ -210,7 +210,7 @@ async function processarUnidade(dbx, unidadeId, agora = new Date()) {
 }
 
 // Uma rodada para todas as unidades, com trava (nunca roda duas vezes ao mesmo tempo).
-async function rodada(agora = new Date()) {
+async function rodada(agora = tempo.agora()) {
   const client = await db.pool.connect()
   try {
     const t = await client.query('SELECT pg_try_advisory_lock($1) AS ok', [TRAVA])

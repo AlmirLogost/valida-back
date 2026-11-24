@@ -48,4 +48,15 @@ const ultimoDiaDoMes = (data) => {
   return new Date(Date.UTC(y, m, 0)).getUTCDate()
 }
 
-module.exports = { partes, hoje, horaAgora, minutos, momento, somarDias, diaDaSemana, ultimoDiaDoMes }
+// Relógio do servidor. Só no banco de ensaio (testes visuais) dá para fixar a
+// hora do dia com RELOGIO_FIXO=HH:MM (05_VISUAL.md: "relógio fixo em 10:00 só
+// no ambiente de teste"). Em qualquer outro banco é sempre a hora real.
+function agora() {
+  const fixo = process.env.RELOGIO_FIXO
+  if (fixo && process.env.DB_NAME === 'valida_ensaio' && /^([01]\d|2[0-3]):[0-5]\d$/.test(fixo)) {
+    return momento(hoje(config.fusoPadrao), fixo, config.fusoPadrao)
+  }
+  return new Date()
+}
+
+module.exports = { agora, partes, hoje, horaAgora, minutos, momento, somarDias, diaDaSemana, ultimoDiaDoMes }

@@ -21,9 +21,16 @@ const CAMPOS = `e.id, e.tarefa_id, e.colaborador_id, e.unidade_id, e.data, e.hor
   e.feita_em, e.recebida_em, e.resposta_texto, e.resposta_num, e.resposta_fora, e.foto_id, e.conferencia, e.conferencia_motivo,
   e.conferida_por, e.conferida_por_tipo, e.conferida_em, e.desfeita_por, e.desfeita_por_tipo, e.desfeita_em, e.diferenca_relogio_s,
   t.titulo, t.porque, t.tipo_resposta, t.pede_foto, t.pai_id, t.nf_min, t.tolerancia_min, t.faixa_min, t.faixa_max, t.unidade_medida, t.opcoes,
-  c.nome AS colaborador_nome, u.fuso, (emp.config->>'tol_atraso_min')::int AS tol_empresa`
+  t.recorrencia, t.hora_fim, t.valor_feita, t.valor_nao_feita,
+  c.nome AS colaborador_nome, u.fuso, (emp.config->>'tol_atraso_min')::int AS tol_empresa,
+  (SELECT json_build_object('estado', a.estado, 'tipo', a.tipo, 'prazo_ate', a.prazo_ate,
+     'responsavel', CASE a.responsavel_tipo WHEN 'admin' THEN (SELECT nome FROM admins WHERE id = a.responsavel_id)
+                    ELSE (SELECT nome FROM colaboradores WHERE id = a.responsavel_id) END,
+     'resolvida_por', CASE a.resolvida_por_tipo WHEN 'admin' THEN (SELECT nome FROM admins WHERE id = a.resolvida_por)
+                    ELSE (SELECT nome FROM colaboradores WHERE id = a.resolvida_por) END)
+   FROM acoes a WHERE a.execucao_id = e.id ORDER BY a.id DESC LIMIT 1) AS acao`
 
-function enfeitar(lista, agora = new Date()) {
+function enfeitar(lista, agora = tempo.agora()) {
   return lista.map((e) => {
     const tol = e.tolerancia_min ?? e.tol_empresa ?? 10
     const limite = agenda.limiteDe(e, e, e.fuso)
@@ -197,7 +204,7 @@ r.get('/bonus/unidades/:id', exigir('premio'), async (req, res) => {
   const { de, ate } = periodo(req)
   const pessoas = await db.q(`SELECT id, nome FROM colaboradores WHERE unidade_principal_id = $1 AND excluido_em IS NULL AND situacao <> 'aguardando' ORDER BY nome`, [u.id])
   const lista = []
-  for (const p of pessoas) lista.push({ colaborador_id: p.id, nome: p.nome, ...(await bonus.calcular(db, p.id, de, ate, new Date(), u.fuso)) })
+  for (const p of pessoas) lista.push({ colaborador_id: p.id, nome: p.nome, ...(await bonus.calcular(db, p.id, de, ate, tempo.agora(), u.fuso)) })
   const soma = (k) => Math.round(lista.reduce((s, x) => s + x[k], 0) * 100) / 100
   res.json({ unidade_id: u.id, de, ate, pessoas: lista, total: { bruto: soma('bruto'), descontos: soma('descontos'), atrasos: soma('atrasos'), liquido: soma('liquido') } })
 })

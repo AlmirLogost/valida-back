@@ -73,7 +73,7 @@ async function concluir(req, execId, b) {
   if (req.ator.tipo !== 'colaborador') throw proibido('O admin não executa tarefas.')
   if (!tem(req, 'faz')) throw proibido('Sem a permissão "Fazer as tarefas", você não conclui tarefas.')
   const chave = v.texto(b.chave_envio, 'a chave do envio', { max: 100 })
-  const agora = new Date()
+  const agora = tempo.agora()
 
   // Horário real do celular (envio sem internet) e diferença de relógio.
   let feitaEm = agora, diferenca = null
@@ -173,7 +173,7 @@ async function conferir(req, execId, b) {
   if (!tem(req, 'conf')) throw proibido()
   const decisao = v.umDe(b.decisao, 'a decisão', ['aprovar', 'reabrir'], { obrigatorio: true })
   const motivo = decisao === 'reabrir' ? v.texto(b.motivo, 'o motivo', { obrigatorio: true, max: 300 }) : null
-  const agora = new Date()
+  const agora = tempo.agora()
   return db.tx(async (x) => {
     const { e, t, u } = await carregar(x, req.ator.empresaId, execId, true)
     conferirUnidade(req, e.unidade_id)
@@ -193,7 +193,7 @@ async function conferir(req, execId, b) {
 // Desfazer: nunca apaga; marca quem e quando e volta para a pessoa.
 async function desfazer(req, execId) {
   if (!tem(req, 'desfaz')) throw proibido('Sem a permissão "Desfazer tarefa feita".')
-  const agora = new Date()
+  const agora = tempo.agora()
   return db.tx(async (x) => {
     const { e, t, u } = await carregar(x, req.ator.empresaId, execId, true)
     conferirUnidade(req, e.unidade_id)
@@ -210,7 +210,7 @@ async function desfazer(req, execId) {
 }
 
 // Atrasada é calculada: a fazer e passou de hora_prevista + tolerância.
-function atrasada(e, tolMin, fuso, agora = new Date()) {
+function atrasada(e, tolMin, fuso, agora = tempo.agora()) {
   if (e.estado !== 'a_fazer' || !e.hora_prevista) return false
   return agora > new Date(tempo.momento(e.data, String(e.hora_prevista).slice(0, 5), fuso).getTime() + tolMin * 60000)
 }
