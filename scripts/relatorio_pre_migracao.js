@@ -131,12 +131,16 @@ const CONSULTAS = [
     ) x`
   },
   {
-    titulo: 'Unidades (lojas)',
+    titulo: 'Unidades (lojas): ativo 1 = ativa, 0 = inativa, -1 = arquivada',
     tabelas: ['lojas'],
     sql: `SELECT
       COUNT(*) AS total,
-      COUNT(*) FILTER (WHERE ativo = 1 AND arquivado_em IS NULL) AS ativas,
-      COUNT(*) FILTER (WHERE arquivado_em IS NOT NULL) AS arquivadas,
+      COUNT(*) FILTER (WHERE ativo = 1) AS ativas,
+      COUNT(*) FILTER (WHERE ativo = 0) AS inativas,
+      COUNT(*) FILTER (WHERE ativo = -1) AS arquivadas,
+      COUNT(*) FILTER (WHERE ativo = -1 AND arquivado_em IS NULL) AS arquivadas_sem_data,
+      COUNT(*) FILTER (WHERE ativo IS NULL OR ativo NOT IN (1, 0, -1)) AS outro_valor,
+      COUNT(*) FILTER (WHERE aberta = 1) AS abertas_hoje,
       COUNT(*) FILTER (WHERE admin_id IS NULL) AS sem_admin_id,
       COUNT(DISTINCT admin_id) AS empresas_com_unidade
     FROM lojas`
@@ -145,14 +149,17 @@ const CONSULTAS = [
     titulo: 'Horários das unidades (loja_horarios)',
     tabelas: ['loja_horarios'],
     sql: `SELECT
-      (SELECT COUNT(*) FROM loja_horarios) AS linhas,
-      COUNT(*) AS dias_com_mais_de_3_turnos,
-      COALESCE(MAX(qtd), 0) AS maior_numero_de_turnos
+      COALESCE(SUM(qtd), 0) AS linhas,
+      COUNT(*) AS dias_com_horario,
+      COUNT(DISTINCT loja_id) AS unidades_com_horario,
+      COUNT(*) FILTER (WHERE qtd > 3) AS dias_com_mais_de_3_turnos,
+      COALESCE(MAX(qtd), 0) AS maior_numero_de_turnos_no_dia,
+      COALESCE(SUM(invalidos), 0) AS linhas_com_hora_invalida
     FROM (
-      SELECT loja_id, dia_semana, COUNT(*) AS qtd
+      SELECT loja_id, dia_semana, COUNT(*) AS qtd,
+        COUNT(*) FILTER (WHERE hora_abertura !~ '^([01][0-9]|2[0-3]):[0-5][0-9]' OR hora_fechamento !~ '^([01][0-9]|2[0-3]):[0-5][0-9]' OR hora_abertura IS NULL OR hora_fechamento IS NULL) AS invalidos
       FROM loja_horarios
       GROUP BY 1, 2
-      HAVING COUNT(*) > 3
     ) x`
   },
   {
@@ -162,6 +169,15 @@ const CONSULTAS = [
       COUNT(*) AS total,
       COUNT(*) FILTER (WHERE data !~ '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$') AS data_invalida
     FROM loja_fechamentos`
+  },
+  {
+    titulo: 'Órfãos: admin_id que não é de nenhum super_admin (ficam só no legado)',
+    tabelas: ['usuarios', 'lojas', 'perfis', 'checklists'],
+    sql: `SELECT
+      (SELECT COUNT(*) FROM lojas l WHERE NOT EXISTS (SELECT 1 FROM usuarios d WHERE d.id = l.admin_id AND d.perfil = 'super_admin')) AS unidades_orfas,
+      (SELECT COUNT(*) FROM perfis p WHERE (p.sistema = 0 OR p.sistema IS NULL) AND NOT EXISTS (SELECT 1 FROM usuarios d WHERE d.id = p.admin_id AND d.perfil = 'super_admin')) AS perfis_orfaos,
+      (SELECT COUNT(*) FROM checklists c WHERE NOT EXISTS (SELECT 1 FROM lojas l JOIN usuarios d ON d.id = l.admin_id AND d.perfil = 'super_admin' WHERE l.id = c.loja_id)) AS tarefas_orfas,
+      (SELECT COUNT(*) FROM usuarios u WHERE COALESCE(u.perfil, '') <> 'super_admin' AND NOT EXISTS (SELECT 1 FROM lojas l JOIN usuarios d ON d.id = l.admin_id AND d.perfil = 'super_admin' WHERE l.id = u.loja_id)) AS pessoas_orfas`
   },
   {
     titulo: 'Cargos e perfis (perfis) (D1, D9, D16)',
@@ -203,7 +219,8 @@ const CONSULTAS = [
     tabelas: ['usuario_lojas', 'perfil_lojas'],
     sql: `SELECT
       (SELECT COUNT(*) FROM usuario_lojas) AS usuario_lojas,
-      (SELECT COUNT(DISTINCT usuario_id) FROM usuario_lojas) AS pessoas_com_mais_unidades,
+      (SELECT COUNT(DISTINCT usuario_id) FROM usuario_lojas) AS pessoas_com_vinculo,
+      (SELECT COUNT(*) FROM (SELECT usuario_id FROM usuario_lojas GROUP BY 1 HAVING COUNT(*) > 1) x) AS pessoas_com_mais_de_uma_unidade,
       (SELECT COUNT(*) FROM perfil_lojas) AS perfil_lojas`
   },
   {
