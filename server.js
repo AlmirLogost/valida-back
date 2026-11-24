@@ -21,7 +21,13 @@ async function iniciar() {
     console.error(`❌ O banco está na migration ${versao}; o servidor precisa da ${config.versaoMinimaBanco}. Rode: node scripts/migrar.js --status`)
     process.exit(1)
   }
-  criarApp().listen(config.porta, '0.0.0.0', () => console.log(`🚀 VALIDA na porta ${config.porta}`))
+  criarApp().listen(config.porta, '0.0.0.0', () => {
+    console.log(`🚀 VALIDA na porta ${config.porta}`)
+    if (config.demoRede) {
+      const ips = Object.values(require('os').networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i.address)
+      for (const ip of ips) console.log(`📱 Demonstração na rede local: http://${ip}:${config.porta}`)
+    }
+  })
   // Agendador: a cada minuto (com trava no banco: nunca roda duas vezes ao mesmo tempo).
   const agenda = require('./src/servicos/agenda')
   const rodar = () => agenda.rodada().catch((e) => console.error(`[agendador] código ${e.code || '-'}`))

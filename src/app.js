@@ -13,7 +13,13 @@ function criarApp() {
   app.disable('x-powered-by')
   app.use(helmet({ contentSecurityPolicy: false }))
   // Segurança item 4: CORS só para FRONTEND_URL (vazio = só a mesma origem).
-  app.use(cors({ origin: config.frontendUrl ? [config.frontendUrl] : false }))
+  // Modo demonstração na rede local (DEMO_REDE=1, só no ensaio): aceita também
+  // origens http de endereços locais (localhost, 127.x, 10.x, 172.16–31.x, 192.168.x).
+  const REDE_LOCAL = /^http:\/\/(localhost|127(\.\d{1,3}){3}|10(\.\d{1,3}){3}|192\.168(\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2})(:\d+)?$/
+  const origens = config.frontendUrl ? [config.frontendUrl] : []
+  app.use(cors({
+    origin: config.demoRede ? (o, ok) => ok(null, !o || origens.includes(o) || REDE_LOCAL.test(o)) : (origens.length ? origens : false)
+  }))
   // Segurança item 5: corpo pequeno (fotos vêm por upload de arquivo na Etapa 1B).
   app.use(express.json({ limit: '100kb' }))
 

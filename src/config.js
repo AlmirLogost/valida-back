@@ -16,6 +16,9 @@ module.exports = {
   pinCifraChave: () => obrigatoria('PIN_CIFRA_CHAVE'),
   // CORS: só a origem do front. Vazio = só a mesma origem (o back serve o front).
   frontendUrl: process.env.FRONTEND_URL || '',
+  // Demonstração na rede local (celular no mesmo Wi-Fi). Só vale com DEMO_REDE=1
+  // E no banco de ensaio: nunca em produção.
+  demoRede: process.env.DEMO_REDE === '1' && process.env.DB_NAME === 'valida_ensaio',
   // D17: envio de e-mail/WhatsApp/SMS sempre simulado até o piloto.
   envioSimulado: process.env.ENVIO_SIMULADO !== 'false',
   envioSimuladoArquivo: process.env.ENVIO_SIMULADO_ARQUIVO || '',
