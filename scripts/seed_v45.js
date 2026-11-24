@@ -26,7 +26,8 @@ const db = require('../src/db')
 const tempo = require('../src/lib/tempo')
 const agenda = require('../src/servicos/agenda')
 const { hashSenha, hashPin } = require('../src/lib/segredos')
-const { garantirPerfisFixos, criarCargosPadrao } = require('../src/servicos/padroes')
+const { garantirPerfisFixos, criarCargosPadrao, gravarMatriz } = require('../src/servicos/padroes')
+const { PADROES } = require('../src/auth/permissoes')
 
 const FUSO = 'America/Sao_Paulo'
 const POOL = [['Abertura da unidade', '07:00'], ['Ligar equipamentos', '09:00'], ['Conferir temperatura', '10:30'], ['Repor materiais', '11:00'], ['Limpeza de bancadas', '14:00'], ['Fechamento · Caixa', '22:00']]
@@ -125,6 +126,15 @@ async function main() {
     await ped('colaborador', pessoas.Rita.id, 'udom', U.shopping, 'Alterar horário e local · Bezin Shopping', 'Abrir aos domingos, das 10:00 às 22:00', { unidade_id: U.shopping, dia_semana: 0, ativo: true, turnos: [{ abre: '10:00', fecha: '22:00' }] }, 'pend', 1440)
     await ped('colaborador', m, 'pedit', U.centro, 'Editar dados · Pedro', 'Celular: (49) 99111-0033 → (49) 99111-0003', {}, 'ok', 2880)
     await ped('colaborador', m, 'arq', U.centro, 'Arquivar · Henri', 'Operador', {}, 'no', 2880)
+    // Só na demonstração (npm run demo passa SEED_DEMO_PEDRO_DISPENSA=1): o Pedro
+    // entra sem confirmar o local, para testar o app do operador pelo celular
+    // (sem https o navegador não libera a localização). O teste visual não passa
+    // essa variável e continua com o Pedro pedindo o local.
+    if (process.env.SEED_DEMO_PEDRO_DISPENSA === '1') {
+      const pf = await t.um(`INSERT INTO perfis_acesso (empresa_id, nome, tipo) VALUES ($1, 'Operadores (demonstração)', 'x') RETURNING id`, [e.id])
+      await gravarMatriz(t, pf.id, [...PADROES.operadores, 'dispensa'])
+      await t.exec('UPDATE colaboradores SET perfil_acesso_id = $2 WHERE id = $1', [pessoas.Pedro.id, pf.id])
+    }
     return { empresa: e.id, U, pessoas }
   })
 
