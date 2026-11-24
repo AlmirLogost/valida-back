@@ -103,7 +103,7 @@ r.post('/colaboradores', async (req, res) => {
 // Ações que viram pedido quando falta a permissão.
 r.put('/colaboradores/:id', (req, res) => pedidos.agirOuPedir(req, res, 'pedit', { ...req.body, colaborador_id: req.params.id }))
 r.put('/colaboradores/:id/celular', (req, res) => pedidos.agirOuPedir(req, res, 'cel', { ...req.body, colaborador_id: req.params.id }))
-r.post('/colaboradores/:id/pin', (req, res) => pedidos.agirOuPedir(req, res, 'pin', { colaborador_id: req.params.id }))
+r.post('/colaboradores/:id/pin', (req, res) => pedidos.agirOuPedir(req, res, 'pin', { colaborador_id: req.params.id, motivo: req.body && req.body.motivo }))
 r.put('/colaboradores/:id/horario-login', (req, res) => pedidos.agirOuPedir(req, res, 'plhs', { ...req.body, colaborador_id: req.params.id }))
 r.post('/colaboradores/:id/arquivar', (req, res) => pedidos.agirOuPedir(req, res, 'arq', { colaborador_id: req.params.id }))
 r.post('/colaboradores/:id/restaurar', (req, res) => pedidos.agirOuPedir(req, res, 'rest', { colaborador_id: req.params.id }))
@@ -170,6 +170,24 @@ r.post('/pedidos/:id/negar', async (req, res) => {
 })
 r.get('/pedidos/:id/pin', async (req, res) => {
   res.json(await pedidos.revelarPin(req, v.id(req.params.id)))
+})
+
+// ---- Acesso de suporte em andamento (Aprovações, §9/§20) ---------------------
+r.get('/suporte/ativos', soAdmin, async (req, res) => {
+  res.json(await db.q(
+    `SELECT id, motivo, inicio, fim FROM acessos_suporte
+     WHERE empresa_id = $1 AND inicio IS NOT NULL AND encerrado_em IS NULL AND fim > $2 ORDER BY fim`, [req.ator.empresaId, tempo.agora()]))
+})
+r.post('/suporte/:id/encerrar', soAdmin, async (req, res) => {
+  const id = v.id(req.params.id)
+  await db.tx(async (t) => {
+    const n = await t.exec(
+      `UPDATE acessos_suporte SET encerrado_em = now(), fim = LEAST(fim, now())
+       WHERE id = $1 AND empresa_id = $2 AND inicio IS NOT NULL AND encerrado_em IS NULL`, [id, req.ator.empresaId])
+    if (!n) throw naoEncontrado()
+    await registrar(t, { empresaId: req.ator.empresaId, ator: req.ator, acao: 'suporte.encerrado', entidade: 'acesso_suporte', entidadeId: id })
+  })
+  res.json({ ok: true })
 })
 
 // ---- Registro de atividades ("log") -----------------------------------------

@@ -48,16 +48,17 @@ async function criarCargosPadrao(db, empresaId, unidadeId, unidadeBaseId = null)
       return
     }
   }
+  // Descrições iguais às da v45 (aparecem no cadastro e em "Editar dados").
   const padrao = [
-    ['Gerente', 'coordenador', false, fixos.gerente],
-    ['Líder', 'coordenador', true, fixos.lider],
-    ['Operador', 'operador', true, fixos.operadores],
-    ['Cozinha', 'operador', false, fixos.operadores]
+    ['Gerente', 'coordenador', false, fixos.gerente, 'Vê tudo da unidade, confere tarefas e cuida da equipe.'],
+    ['Líder', 'coordenador', true, fixos.lider, 'Confere as tarefas do turno e orienta os operadores.'],
+    ['Operador', 'operador', true, fixos.operadores, 'Recebe as tarefas do dia e conclui no celular.'],
+    ['Cozinha', 'operador', false, fixos.operadores, 'Preparo, limpeza e abertura da cozinha.']
   ]
-  for (const [nome, perfil, ePadrao, pa] of padrao) {
+  for (const [nome, perfil, ePadrao, pa, descricao] of padrao) {
     await db.exec(
-      `INSERT INTO cargos (empresa_id, unidade_id, nome, perfil, padrao, perfil_acesso_id) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [empresaId, unidadeId, nome, perfil, ePadrao, pa])
+      `INSERT INTO cargos (empresa_id, unidade_id, nome, perfil, padrao, perfil_acesso_id, descricao) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [empresaId, unidadeId, nome, perfil, ePadrao, pa, descricao])
   }
 }
 

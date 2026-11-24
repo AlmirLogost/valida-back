@@ -64,12 +64,15 @@ async function montarCampos(db, empresaId, entrada, atual = null) {
   if (c.pai_id) await buscar.tarefa(db, empresaId, c.pai_id)
   c.secao = v.texto(pega('secao'), 'a seção', { max: 60 })
   c.conjunto_id = v.inteiro(pega('conjunto_id'), 'o conjunto', { min: 1 })
+  // D8: tolerância de atraso da tarefa (vazio = a da empresa). Cadastro, passo 4.
+  const tol = pega('tolerancia_min')
+  c.tolerancia_min = tol === null || tol === undefined ? null : v.umDe(Number(tol), 'a tolerância de atraso', [0, 5, 10, 15, 30])
   return c
 }
 
 const COLUNAS = ['titulo', 'porque', 'unidade_id', 'colaborador_id', 'cargo_id', 'recorrencia', 'dias_semana', 'dia_mes',
   'data_pontual', 'hora_ini', 'hora_fim', 'tipo_resposta', 'faixa_min', 'faixa_max', 'unidade_medida', 'opcoes',
-  'pede_foto', 'nf_min', 'prazo_acao_min', 'valor_feita', 'valor_nao_feita', 'pai_id', 'secao', 'conjunto_id']
+  'pede_foto', 'nf_min', 'prazo_acao_min', 'valor_feita', 'valor_nao_feita', 'pai_id', 'secao', 'conjunto_id', 'tolerancia_min']
 
 function valorColuna(c, k) {
   return k === 'opcoes' && c[k] !== null ? JSON.stringify(c[k]) : c[k]

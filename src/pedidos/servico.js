@@ -116,7 +116,11 @@ async function revelarPin(req, pedidoId) {
 }
 
 const CAMPOS_LISTA = `id, unidade_id, solicitante_tipo, solicitante_id, tipo, titulo, detalhe, estado, decidido_por, decidido_em,
-  (resultado - 'pin_cifrado' - 'codigo_hash') AS resultado, (resultado ? 'pin_cifrado') AS tem_pin_para_ver, visto_pelo_solicitante_em, criado_em`
+  (resultado - 'pin_cifrado' - 'codigo_hash') AS resultado, (resultado ? 'pin_cifrado') AS tem_pin_para_ver, visto_pelo_solicitante_em, criado_em,
+  (payload->>'colaborador_id')::bigint AS colaborador_id,
+  CASE solicitante_tipo WHEN 'plataforma' THEN 'Suporte Valida'
+    WHEN 'admin' THEN (SELECT split_part(nome, ' ', 1) FROM admins WHERE id = pedidos.solicitante_id)
+    ELSE (SELECT nome FROM colaboradores WHERE id = pedidos.solicitante_id) END AS solicitante_nome`
 
 async function listar(req, { meus, estado }) {
   const params = [req.ator.empresaId]

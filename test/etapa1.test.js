@@ -380,3 +380,43 @@ test('dados migrados do legado respondem nas rotas novas', async () => {
     assert.ok(eu.corpo.permissoes.includes('faz'))
   }
 })
+
+// ---- Etapa 2 · Parte B: decisões do Almir sobre o login --------------------
+test('login: erro genérico para celular desconhecido e PIN errado; /auth/quem não existe', async () => {
+  const p = await h.criarPessoa(S.A.token, S.uA1.id, 'Operador', 'Pessoa Genérico')
+  const errado = p.pin === '0000' ? '1111' : '0000'
+  const r1 = await h.entrar({ celular: h.celular(), pin: '1234' }, A1)
+  const r2 = await h.entrar({ ...p, pin: errado }, A1)
+  assert.equal(r1.status, 401)
+  assert.equal(r2.status, 401)
+  assert.equal(r1.corpo.erro, 'Celular ou PIN incorretos.')
+  assert.equal(r2.corpo.erro, r1.corpo.erro)
+  assert.ok([401, 404].includes((await h.chamar('POST', '/api/v2/auth/quem', { corpo: { celular: p.celular } })).status))
+})
+
+test('liberação: motivos da §10; "Outro" exige texto', async () => {
+  const p = await h.criarPessoa(S.A.token, S.uA1.id, 'Operador', 'Pessoa Motivo')
+  assert.equal((await h.entrar(p, { ...longe(A1), pedir_liberacao: 'outro' })).status, 400)
+  assert.equal((await h.entrar(p, { ...longe(A1), pedir_liberacao: 'celular_novo' })).status, 400)
+  const ok = await h.entrar(p, { ...longe(A1), pedir_liberacao: 'outro', motivo_texto: 'Fui ao banco' })
+  assert.equal(ok.status, 202, JSON.stringify(ok.corpo))
+  const ped = await h.db.um('SELECT detalhe, payload FROM pedidos WHERE id = $1', [ok.corpo.pedido_id])
+  assert.match(ped.detalhe, /Fui ao banco/)
+  assert.equal(ped.payload.motivo_texto, 'Fui ao banco')
+})
+
+test('Líder não tem "lib" por padrão; o admin liga no perfil e ele passa a aprovar', async () => {
+  const a = h.api(S.A.token)
+  const lider = await h.criarPessoa(S.A.token, S.uA1.id, 'Líder', 'Líder A1')
+  const op = await h.criarPessoa(S.A.token, S.uA1.id, 'Operador', 'Pessoa Lib Líder')
+  const perfis = (await a.get('/perfis')).corpo
+  const pl = perfis.find((x) => x.fixo && x.nome === 'Líder')
+  assert.equal(pl.permissoes.lib, false)
+  let fora = await h.entrar(op, longe(A1))
+  assert.ok(!fora.corpo.aprovadores.some((x) => x.nome === 'Líder A1'))
+  assert.equal((await a.put(`/perfis/${pl.id}`, { permissoes: { ...pl.permissoes, lib: true } })).status, 200)
+  fora = await h.entrar(op, longe(A1))
+  assert.ok(fora.corpo.aprovadores.some((x) => x.nome === 'Líder A1'))
+  // volta ao padrão para não afetar os outros testes
+  assert.equal((await a.put(`/perfis/${pl.id}`, { permissoes: pl.permissoes })).status, 200)
+})

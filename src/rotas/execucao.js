@@ -99,11 +99,16 @@ r.get('/acoes', exigir('conf'), async (req, res) => {
   const estado = v.umDe(req.query.estado ?? 'aberta', 'o estado', ['aberta', 'resolvida'])
   const unidades = unidadeId ? [unidadeId] : [...req.acesso.unidades]
   const lista = await db.q(
-    `SELECT a.*, (a.estado = 'aberta' AND a.prazo_ate < now()) AS prazo_vencido,
-            e.colaborador_id, c.nome AS colaborador_nome, t.titulo AS tarefa_titulo, e.data
+    `SELECT a.*, (a.estado = 'aberta' AND a.prazo_ate < $4) AS prazo_vencido,
+            e.colaborador_id, c.nome AS colaborador_nome, cg.perfil AS colaborador_perfil, t.titulo AS tarefa_titulo, e.data,
+            CASE a.responsavel_tipo WHEN 'admin' THEN 'Admin' ELSE (SELECT split_part(r.nome, ' ', 1) FROM colaboradores r WHERE r.id = a.responsavel_id) END AS responsavel_nome,
+            (SELECT nome FROM colaboradores r WHERE r.id = a.resolvida_por AND a.resolvida_por_tipo = 'colaborador'
+             UNION ALL SELECT split_part(nome, ' ', 1) FROM admins d WHERE d.id = a.resolvida_por AND a.resolvida_por_tipo = 'admin' LIMIT 1) AS resolvida_por_nome,
+            (a.resolvida_em > a.prazo_ate) AS resolvida_fora_do_prazo
      FROM acoes a JOIN execucoes e ON e.id = a.execucao_id JOIN tarefas t ON t.id = e.tarefa_id JOIN colaboradores c ON c.id = e.colaborador_id
+     JOIN cargos cg ON cg.id = c.cargo_id
      WHERE a.empresa_id = $1 AND a.unidade_id = ANY($2) AND a.estado = $3
-     ORDER BY a.prazo_ate`, [req.ator.empresaId, unidades, estado])
+     ORDER BY ${estado === 'aberta' ? 'a.prazo_ate' : 'a.resolvida_em DESC'}`, [req.ator.empresaId, unidades, estado, tempo.agora()])
   res.json(lista)
 })
 

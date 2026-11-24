@@ -20,6 +20,11 @@ const pool = new Pool({
   max: 10
 })
 
+// Conexão parada derrubada pelo Postgres (reinício, DROP ... WITH (FORCE),
+// timeout): sem este ouvinte o Node encerra o servidor inteiro. O pool já
+// descarta essa conexão e abre outra na próxima consulta.
+pool.on('error', (e) => console.error(`[banco] conexão parada caiu: código ${e.code || '-'}`))
+
 function envolver(executor) {
   return {
     q: async (sql, params = []) => (await executor.query(sql, params)).rows,

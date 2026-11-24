@@ -58,22 +58,8 @@ r.post('/auth/admin/entrar', async (req, res) => {
   res.json(respostaSessao(ator, acesso))
 })
 
-// ---- Reconhecer pelo celular (antes do PIN, §10) ----------------------------
-// Mostra só o primeiro nome, o cargo e a unidade. Limitado por IP (cada
-// consulta conta como tentativa) para não virar lista de pessoas.
-r.post('/auth/quem', async (req, res) => {
-  const celular = v.celular(req.body.celular, { obrigatorio: true })
-  const chave = `quem:${req.ip}`
-  await tentativas.conferirBloqueio('equipe', chave)
-  // Na unidade todos podem sair pelo mesmo IP (Wi-Fi): limite mais largo.
-  await tentativas.falhou('equipe', chave, { maxFalhas: 30 })
-  const p = await db.um(
-    `SELECT c.nome, cg.nome AS cargo, cg.perfil, u.nome AS unidade FROM colaboradores c
-     JOIN cargos cg ON cg.id = c.cargo_id JOIN unidades u ON u.id = c.unidade_principal_id
-     WHERE c.celular = $1 AND c.excluido_em IS NULL AND c.situacao <> 'arquivado' ORDER BY c.id LIMIT 1`, [celular])
-  if (!p) throw naoEncontrado('Celular não encontrado. Fale com o admin.')
-  res.json({ nome: String(p.nome).split(' ')[0], cargo: p.cargo, perfil: p.perfil, unidade: p.unidade })
-})
+// Motivos da liberação (§10).
+const MOTIVOS = { cheguei_antes: 'cheguei antes', cobrir_outra_unidade: 'vou cobrir outra unidade', gps_nao_achou: 'o GPS não achou o local' }
 
 // ---- Equipe: celular + PIN + localização ------------------------------------
 // Respostas além do token: estado = escolher_unidade | localizacao_necessaria |
@@ -86,16 +72,17 @@ r.post('/auth/entrar', async (req, res) => {
   const candidatos = await db.q(
     `SELECT c.id, c.pin_hash, c.situacao FROM colaboradores c
      WHERE c.celular = $1 AND c.excluido_em IS NULL AND c.situacao <> 'arquivado'`, [celular])
+  // Erro sempre genérico: não revela se o celular existe (decisão 5, Parte B).
+  const GENERICO = 'Celular ou PIN incorretos.'
   if (!candidatos.length) {
     await tentativas.falhou('equipe', celular)
-    throw naoEncontrado('Celular não encontrado. Fale com o admin.')
+    throw naoAutenticado(GENERICO)
   }
   let achado = null
   for (const c of candidatos) if (await confere(pin, c.pin_hash)) { achado = c; break }
   if (!achado) {
     await tentativas.falhou('equipe', celular)
-    if (candidatos.every((c) => !c.pin_hash)) throw proibido('Você ainda não tem PIN. Peça ao seu gestor para reenviar o convite.')
-    throw naoAutenticado('PIN incorreto.')
+    throw naoAutenticado(GENERICO)
   }
   await tentativas.acertou('equipe', celular)
   if (achado.situacao === 'aguardando') throw proibido('Seu cadastro ainda está aguardando aprovação.')
@@ -161,14 +148,16 @@ r.post('/auth/entrar', async (req, res) => {
         liberadoPor = lib.id
       } else if (req.body.pedir_liberacao) {
         const motivo = v.umDe(req.body.pedir_liberacao, 'o motivo', ['cheguei_antes', 'cobrir_outra_unidade', 'gps_nao_achou', 'outro'])
+        // "Outro" pede o texto (§10).
+        const motivoTexto = motivo === 'outro' ? v.texto(req.body.motivo_texto, 'o motivo', { obrigatorio: true, max: 140 }) : null
         const pendente = await db.um(
           `SELECT id FROM pedidos WHERE empresa_id = $1 AND tipo = 'lib' AND estado = 'pend' AND solicitante_id = $2 AND solicitante_tipo = 'colaborador' AND unidade_id = $3`,
           [ator.empresaId, ator.id, unidade.id])
         const pedido = pendente || await pedidos.criarPedido(db, ator, 'lib', {
           unidadeId: unidade.id,
           titulo: `Liberar entrada · ${ator.nome}`,
-          detalhe: `${unidade.nome} · a ${distancia} m (raio ${unidade.raio_m} m) · motivo: ${motivo.replace(/_/g, ' ')}`,
-          payload: { colaborador_id: ator.id, unidade_id: unidade.id, motivo, distancia_m: distancia }
+          detalhe: `${unidade.nome} · a ${distancia} m (raio ${unidade.raio_m} m) · motivo: ${motivoTexto || MOTIVOS[motivo]}`,
+          payload: { colaborador_id: ator.id, unidade_id: unidade.id, motivo, motivo_texto: motivoTexto, distancia_m: distancia }
         })
         return res.status(202).json({ estado: 'aguardando_liberacao', pedido_id: pedido.id, distancia_m: distancia, raio_m: unidade.raio_m, unidade: unidade.nome, aprovadores: await aprovadores(unidade.id, ator.id) })
       } else {
@@ -295,6 +284,11 @@ r.put('/auth/pin', autenticar, async (req, res) => {
 r.get('/eu', autenticar, async (req, res) => {
   const e = await db.um('SELECT nome, plano, situacao, trial_ate FROM empresas WHERE id = $1', [req.ator.empresaId])
   const pend = req.acesso.admin ? await db.um(`SELECT COUNT(*)::int AS n FROM pedidos WHERE empresa_id = $1 AND estado = 'pend'`, [req.ator.empresaId]) : null
+  // Colaborador: cargo e unidade principal (Início do gerente, §3).
+  const eu = req.ator.tipo === 'colaborador' ? await db.um(
+    `SELECT cg.nome AS cargo, c.unidade_principal_id, COALESCE(c.perfil_acesso_id, cg.perfil_acesso_id) AS perfil_acesso_id,
+            (SELECT nome FROM perfis_acesso WHERE id = COALESCE(c.perfil_acesso_id, cg.perfil_acesso_id)) AS perfil_acesso_nome
+     FROM colaboradores c JOIN cargos cg ON cg.id = c.cargo_id WHERE c.id = $1`, [req.ator.id]) : null
   res.json({
     agora: tempo.agora(),
     empresa: e,
@@ -303,7 +297,8 @@ r.get('/eu', autenticar, async (req, res) => {
     situacao_empresa: req.ator.situacaoEmpresa,
     perfil: req.acesso.admin ? 'admin' : req.acesso.perfilCargo,
     permissoes: [...req.acesso.chaves].sort(),
-    unidades: [...req.acesso.unidades]
+    unidades: [...req.acesso.unidades],
+    ...(eu || {})
   })
 })
 

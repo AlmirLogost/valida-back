@@ -144,7 +144,9 @@ async function perfilCompleto(p) {
   const ch = await chavesDoPerfil(db, p.id)
   const uso = await db.um(
     `SELECT (SELECT COUNT(*)::int FROM colaboradores WHERE perfil_acesso_id = $1 AND excluido_em IS NULL) AS pessoas,
-            (SELECT COUNT(*)::int FROM cargos WHERE perfil_acesso_id = $1 AND arquivado_em IS NULL) AS cargos`, [p.id])
+            (SELECT COUNT(*)::int FROM cargos WHERE perfil_acesso_id = $1 AND arquivado_em IS NULL) AS cargos,
+            (SELECT COUNT(*)::int FROM colaboradores c JOIN cargos cg ON cg.id = c.cargo_id
+             WHERE COALESCE(c.perfil_acesso_id, cg.perfil_acesso_id) = $1 AND c.excluido_em IS NULL AND c.situacao = 'ativo') AS pessoas_efetivas`, [p.id])
   return { ...p, permissoes: Object.fromEntries(CHAVES.map((c) => [c, ch.includes(c)])), ...uso }
 }
 

@@ -117,7 +117,7 @@ async function main() {
       `INSERT INTO pedidos (empresa_id, unidade_id, solicitante_tipo, solicitante_id, tipo, titulo, detalhe, payload, estado, criado_em, decidido_por, decidido_em)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [e.id, unidade, tipoSol, solId, tipo, titulo, detalhe, JSON.stringify(payload), estado, new Date(agora.getTime() - minutos * 60000),
-        estado === 'pend' ? null : a.id, estado === 'pend' ? null : agora])
+        estado === 'pend' ? null : a.id, estado === 'pend' ? null : new Date(agora.getTime() - minutos * 60000)])
     const limpeza = pessoas.Almir.tarefas.find((x) => x.titulo === 'Limpeza de bancadas')
     await ped('plataforma', 0, 'sup', U.centro, 'Acesso de suporte · 1 hora', 'Ana Lima (Suporte) · ajustar os horários de login da equipe. Ela vê o app como você, só durante esse tempo.', {}, 'pend', 5)
     await ped('colaborador', m, 'tset', U.centro, 'Editar tarefa · Almir', 'Limpeza de bancadas · das 14:00 para 14:30', { tarefa_id: limpeza.id, hora_ini: '14:30', hora_fim: null }, 'pend', 12)

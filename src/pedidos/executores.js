@@ -355,7 +355,9 @@ E.pin = {
   async preparar(db, req, e) {
     const p = await pessoaNoAlcance(db, req, e.colaborador_id)
     if (p.situacao !== 'ativo') throw invalido('Só dá para gerar PIN para quem está ativo.')
-    return { payload: { colaborador_id: p.id }, unidadeId: p.unidade_principal_id, titulo: `Novo PIN · ${p.nome}`, detalhe: 'O PIN atual deixa de valer.' }
+    // Pedido do próprio colaborador ("Alterar meu PIN") vem com o motivo.
+    const motivo = v.texto(e.motivo, 'o motivo', { max: 140 })
+    return { payload: { colaborador_id: p.id }, unidadeId: p.unidade_principal_id, titulo: `Novo PIN · ${p.nome}`, detalhe: (motivo ? motivo + ' · ' : '') + 'O PIN atual deixa de valer.' }
   },
   async executar(db, ctx, p) {
     const c = await buscar.colaborador(db, ctx.empresaId, p.colaborador_id)
