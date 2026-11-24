@@ -25,5 +25,10 @@ module.exports = {
   sessao: { equipe: '12h', admin: '7d' },
   tentativas: { maxFalhas: 5, janelaMin: 15, bloqueioMin: 15 },
   senhaTokenMin: 30,
-  versaoMinimaBanco: 41
+  // Fotos: pasta fora do git (padrão FOTOS-VALIDA/ na raiz do projeto) e limite.
+  fotosDir: process.env.FOTOS_DIR || path.join(__dirname, '..', '..', 'FOTOS-VALIDA'),
+  fotoMaxMb: Number(process.env.FOTO_MAX_MB) || 5,
+  // Envio offline: diferença de relógio acima disso fica marcada para o gerente.
+  relogioAlertaS: 300,
+  versaoMinimaBanco: 42
 }

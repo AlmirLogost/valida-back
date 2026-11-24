@@ -19,4 +19,33 @@ const minutos = (hhmm) => {
   return h * 60 + m
 }
 
-module.exports = { partes, hoje, horaAgora, minutos }
+// Momento (Date) de "data HH:MM" no fuso dado. Ex.: momento('2031-03-10', '09:00', 'America/Sao_Paulo').
+function momento(data, hhmm, fuso) {
+  const [y, m, d] = data.split('-').map(Number)
+  const [h, mi] = String(hhmm).slice(0, 5).split(':').map(Number)
+  const alvo = Date.UTC(y, m - 1, d, h, mi)
+  let t = alvo
+  for (let i = 0; i < 3; i++) {
+    const p = partes(fuso, new Date(t))
+    const [py, pm, pd] = p.data.split('-').map(Number)
+    const [ph, pmi] = p.hora.split(':').map(Number)
+    const visto = Date.UTC(py, pm - 1, pd, ph, pmi)
+    if (visto === alvo) break
+    t += alvo - visto
+  }
+  return new Date(t)
+}
+
+// Soma dias a 'AAAA-MM-DD'.
+function somarDias(data, n) {
+  const [y, m, d] = data.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
+}
+
+const diaDaSemana = (data) => new Date(`${data}T12:00:00Z`).getUTCDay()
+const ultimoDiaDoMes = (data) => {
+  const [y, m] = data.split('-').map(Number)
+  return new Date(Date.UTC(y, m, 0)).getUTCDate()
+}
+
+module.exports = { partes, hoje, horaAgora, minutos, momento, somarDias, diaDaSemana, ultimoDiaDoMes }

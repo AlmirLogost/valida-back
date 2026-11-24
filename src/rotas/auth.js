@@ -12,6 +12,7 @@ const { naoAutenticado, proibido, naoEncontrado, invalido } = require('../lib/er
 const tentativas = require('../auth/tentativas')
 const { assinar, autenticar, carregarAtor } = require('../auth/sessao')
 const pedidos = require('../pedidos/servico')
+const agenda = require('../servicos/agenda')
 
 const r = express.Router()
 
@@ -144,10 +145,17 @@ r.post('/auth/entrar', async (req, res) => {
     }
   }
 
+  // Atraso de chegada: login × primeira tarefa do dia (vale o primeiro login do dia no bônus).
+  await db.tx((x) => agenda.processarUnidade(x, unidade.id))
+  const primeira = await db.um(
+    `SELECT MIN(e.hora_prevista) AS h FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id
+     WHERE e.colaborador_id = $1 AND e.unidade_id = $2 AND e.data = $3 AND t.pai_id IS NULL AND e.estado IN ('a_fazer', 'feita', 'nao_feita')`,
+    [ator.id, unidade.id, tempo.hoje(unidade.fuso)])
+  const atraso = primeira && primeira.h ? Math.max(0, tempo.minutos(tempo.horaAgora(unidade.fuso)) - tempo.minutos(primeira.h)) : null
   await db.exec(
-    `INSERT INTO logins (empresa_id, colaborador_id, unidade_id, lat, lng, distancia_m, dentro_raio, liberado_por_pedido_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [ator.empresaId, ator.id, unidade.id, lat, lng, distancia, dentro, liberadoPor])
+    `INSERT INTO logins (empresa_id, colaborador_id, unidade_id, lat, lng, distancia_m, dentro_raio, liberado_por_pedido_id, atraso_min)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [ator.empresaId, ator.id, unidade.id, lat, lng, distancia, dentro, liberadoPor, atraso])
   await registrar(db, { empresaId: ator.empresaId, unidadeId: unidade.id, ator, acao: 'login.equipe', detalhe: { dentro_raio: dentro, liberado_por_pedido_id: liberadoPor, dispensa } })
   res.json(respostaSessao(ator, acesso, { estado: liberadoPor ? 'liberado' : 'no_local', unidade_id: unidade.id }))
 })

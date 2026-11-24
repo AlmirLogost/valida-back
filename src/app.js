@@ -24,6 +24,7 @@ function criarApp() {
   v2.use(require('./rotas/unidades'))
   v2.use(require('./rotas/acessos').rotas)
   v2.use(require('./rotas/equipe'))
+  v2.use(require('./rotas/execucao'))
   v2.use((req, res) => res.status(404).json({ erro: 'Não encontrado.' }))
   app.use('/api/v2', v2)
 

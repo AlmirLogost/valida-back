@@ -143,9 +143,11 @@ r.get('/tarefas', async (req, res) => {
   const unidadeId = v.id(req.query.unidade_id, 'a unidade')
   conferirUnidade(req, unidadeId)
   const proprias = !tem(req, 'ver')
+  // ?desativadas=1 → "Canceladas" (desativadas, ainda não excluídas).
+  const desativadas = req.query.desativadas === '1'
   res.json(await db.q(
-    `SELECT * FROM tarefas WHERE empresa_id = $1 AND unidade_id = $2 AND arquivado_em IS NULL AND ($3 = false OR colaborador_id = $4)
-     ORDER BY hora_ini, id`, [req.ator.empresaId, unidadeId, proprias, req.ator.tipo === 'colaborador' ? req.ator.id : 0]))
+    `SELECT * FROM tarefas WHERE empresa_id = $1 AND unidade_id = $2 AND arquivado_em IS NULL AND ativa = $5 AND ($3 = false OR colaborador_id = $4)
+     ORDER BY hora_ini, id`, [req.ator.empresaId, unidadeId, proprias, req.ator.tipo === 'colaborador' ? req.ator.id : 0, !desativadas]))
 })
 r.post('/tarefas', (req, res) => pedidos.agirOuPedir(req, res, 'tsave', { campos: req.body }))
 r.put('/tarefas/:id', (req, res) => pedidos.agirOuPedir(req, res, 'tsave', { tarefa_id: req.params.id, campos: req.body }))

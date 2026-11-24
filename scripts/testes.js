@@ -10,6 +10,7 @@
 const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
+const os = require('os')
 const { spawnSync } = require('child_process')
 
 const raiz = path.join(__dirname, '..')
@@ -37,7 +38,10 @@ const env = {
   ENVIO_SIMULADO: 'true',
   ENVIO_SIMULADO_ARQUIVO: '',
   FRONTEND_URL: 'http://front.teste',
-  WEBHOOK_ASAAS_ATIVO: 'false'
+  WEBHOOK_ASAAS_ATIVO: 'false',
+  // Fotos dos testes numa pasta temporária (nunca em FOTOS-VALIDA/) e limite menor.
+  FOTOS_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'valida-fotos-teste-')),
+  FOTO_MAX_MB: '1'
 }
 
 function rodar(args, { silencioso = false } = {}) {

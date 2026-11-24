@@ -90,4 +90,14 @@ async function entrar(pessoa, extra = {}) {
   return chamar('POST', '/api/v2/auth/entrar', { corpo: { celular: pessoa.celular, pin: pessoa.pin, ...extra } })
 }
 
-module.exports = { db, subir, descer, chamar, api, criarEmpresa, criarUnidade, cargoDe, criarPessoa, entrar, celular }
+async function enviarFoto(token, bytes, tipo = 'image/jpeg') {
+  const r = await fetch(base + '/api/v2/fotos', { method: 'POST', headers: { 'content-type': tipo, authorization: `Bearer ${token}` }, body: bytes })
+  return { status: r.status, corpo: await r.json().catch(() => null) }
+}
+
+async function baixar(token, caminho) {
+  const r = await fetch(base + '/api/v2' + caminho, { headers: { authorization: `Bearer ${token}` } })
+  return { status: r.status, tipo: r.headers.get('content-type'), bytes: Buffer.from(await r.arrayBuffer()) }
+}
+
+module.exports = { enviarFoto, baixar, db, subir, descer, chamar, api, criarEmpresa, criarUnidade, cargoDe, criarPessoa, entrar, celular }
