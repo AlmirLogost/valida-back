@@ -12,6 +12,12 @@
 //   node scripts/rodar_migrations.js             -> aplica em valida_v2 (padrão)
 //   DB_NAME=valida_ensaio node scripts/rodar_migrations.js  -> aplica no ensaio
 
+// LEGADO (Etapa 1): substituído por scripts/migrar.js. A partir da 020 as
+// migrations têm arquivos .up.sql e .down.sql; este script rodaria os dois
+// (inclusive o "desfazer"), por isso agora ele se recusa a rodar.
+console.error('❌ scripts/rodar_migrations.js foi substituído. Use: node scripts/migrar.js --status')
+process.exit(1)
+
 require('dotenv').config()
 
 const host = process.env.DB_HOST || 'localhost'

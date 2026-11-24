@@ -98,13 +98,15 @@ psql -U postgres -d valida_v2 -f migrations/010_arquivamento.sql
 psql -U postgres -d valida_v2 -f migrations/011_corrige_matriz_perfis_sistema.sql
 ```
 
-Se o servidor não tiver `psql` (no Mac de desenvolvimento não tinha — por
-isso existe `back/scripts/rodar_migrations.js`, que faz a mesma coisa usando
-Node), use isso no lugar dos comandos `psql` acima:
+> **Mudou na Etapa 1:** `scripts/rodar_migrations.js` foi substituído por
+> `scripts/migrar.js` (controle em `schema_migrations`, `up`/`down`,
+> `--status`, `--dry-run`). O antigo agora se recusa a rodar. Em produção o
+> novo só roda com `--producao --confirmar-banco=<DB_NAME>`. Passo a passo em
+> `docs/valida/ETAPA_1_PARTE_1.md` (raiz do projeto).
 
 ```bash
 cd <caminho-do-projeto>/back
-node scripts/rodar_migrations.js
+node scripts/migrar.js --status
 ```
 
 **Impacto pra quem já usa o sistema hoje (contas e colaboradores
