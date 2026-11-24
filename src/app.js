@@ -1,0 +1,53 @@
+// Monta o app Express (usado pelo server.js e pelos testes).
+const path = require('path')
+const express = require('express')
+const cors = require('cors')
+const helmet = require('helmet')
+const config = require('./config')
+const { ErroHttp } = require('./lib/erros')
+const { autenticar } = require('./auth/sessao')
+
+function criarApp() {
+  const app = express()
+  app.set('trust proxy', 1)
+  app.disable('x-powered-by')
+  app.use(helmet({ contentSecurityPolicy: false }))
+  // Segurança item 4: CORS só para FRONTEND_URL (vazio = só a mesma origem).
+  app.use(cors({ origin: config.frontendUrl ? [config.frontendUrl] : false }))
+  // Segurança item 5: corpo pequeno (fotos vêm por upload de arquivo na Etapa 1B).
+  app.use(express.json({ limit: '100kb' }))
+
+  // API nova.
+  const v2 = express.Router()
+  v2.use(require('./rotas/auth'))
+  v2.use(autenticar)
+  v2.use(require('./rotas/unidades'))
+  v2.use(require('./rotas/acessos').rotas)
+  v2.use(require('./rotas/equipe'))
+  v2.use((req, res) => res.status(404).json({ erro: 'Não encontrado.' }))
+  app.use('/api/v2', v2)
+
+  // Rotas antigas (transição).
+  app.use('/api', require('./rotas/compat')(v2))
+
+  // Front compilado.
+  const dist = path.join(__dirname, '..', '..', 'front', 'dist')
+  app.use(express.static(dist, {
+    setHeaders: (res, p) => { if (p.endsWith('.html')) res.setHeader('Cache-Control', 'no-store') }
+  }))
+  app.get('/{*splat}', (req, res, next) => res.sendFile(path.join(dist, 'index.html'), (e) => e && next()))
+
+  // Erros: mensagem em português; nada de dados internos para fora.
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, next) => {
+    if (err instanceof ErroHttp) return res.status(err.status).json({ erro: err.message, ...(err.extra || {}) })
+    if (err && err.type === 'entity.too.large') return res.status(413).json({ erro: 'Envio grande demais.' })
+    if (err && err.type === 'entity.parse.failed') return res.status(400).json({ erro: 'JSON inválido.' })
+    if (err && err.code === '23505') return res.status(409).json({ erro: 'Já existe um registro igual.' })
+    console.error(`[erro] ${req.method} ${req.path}: ${err && err.code ? `código ${err.code}` : ''} ${err && err.message ? err.message.split('\n')[0] : ''}`)
+    res.status(500).json({ erro: 'Erro interno. Tente de novo.' })
+  })
+  return app
+}
+
+module.exports = { criarApp }
