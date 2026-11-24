@@ -152,6 +152,25 @@ async function main() {
     }
     void nome
   }
+  // Histórico do Pedro (histData da v45): 13 dias antes de hoje, as 4 tarefas
+  // do operador. Feita quando hsh(título+dia) % 5 != 0; "com atraso" quando
+  // hsh(título+dia+'a') % 9 == 0 (o mesmo sorteio da v45).
+  const pedro = ids.pessoas.Pedro
+  for (let d = 1; d <= 13; d++) {
+    const dia = tempo.somarDias(hoje, -d)
+    for (const tk of pedro.tarefas.slice(0, 4)) {
+      const feita = hsh(tk.titulo + dia) % 5 !== 0
+      const atraso = feita && hsh(tk.titulo + dia + 'a') % 9 === 0
+      const [h, mi] = tk.hora.split(':').map(Number)
+      const min = h * 60 + mi + (atraso ? 25 : 3)
+      const em = feita ? tempo.momento(dia, `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`, FUSO) : null
+      await db.exec(
+        `INSERT INTO execucoes (empresa_id, tarefa_id, colaborador_id, unidade_id, data, hora_prevista, estado, feita_em, recebida_em)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`,
+        [ids.empresa, tk.id, pedro.id, pedro.unidade, dia, tk.hora, feita ? 'feita' : 'nao_feita', em])
+    }
+  }
+
   // Agora (relógio do teste): vence o que passou do limite e abre as ações.
   for (const u of Object.values(ids.U)) await db.tx((x) => agenda.processarUnidade(x, u, agora))
   const n = await db.um(`SELECT COUNT(*)::int AS e, COUNT(*) FILTER (WHERE estado = 'feita')::int AS f FROM execucoes WHERE empresa_id = $1`, [ids.empresa])

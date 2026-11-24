@@ -289,6 +289,12 @@ r.get('/eu', autenticar, async (req, res) => {
     `SELECT cg.nome AS cargo, c.unidade_principal_id, COALESCE(c.perfil_acesso_id, cg.perfil_acesso_id) AS perfil_acesso_id,
             (SELECT nome FROM perfis_acesso WHERE id = COALESCE(c.perfil_acesso_id, cg.perfil_acesso_id)) AS perfil_acesso_nome
      FROM colaboradores c JOIN cargos cg ON cg.id = c.cargo_id WHERE c.id = $1`, [req.ator.id]) : null
+  // Alerta "Hora da tarefa" (§13, §18): configuração da unidade principal.
+  if (eu) {
+    eu.alerta = await db.um(
+      `SELECT push, antes_min, modo, som, vibrar, repetir_min FROM config_notificacoes WHERE unidade_id = $1`, [eu.unidade_principal_id]) ||
+      { push: true, antes_min: 0, modo: 2, som: true, vibrar: true, repetir_min: 0 }
+  }
   res.json({
     agora: tempo.agora(),
     empresa: e,

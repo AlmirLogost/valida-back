@@ -14,6 +14,7 @@ const buscar = require('../servicos/buscar')
 const { registrar } = require('../lib/registro')
 const { tem, exigir, conferirUnidade } = require('../auth/sessao')
 const { invalido, proibido, naoEncontrado, conflito } = require('../lib/erros')
+const pedidos = require('../pedidos/servico')
 
 const r = express.Router()
 
@@ -61,6 +62,49 @@ r.get('/minhas-tarefas', async (req, res) => {
      WHERE e.colaborador_id = $1 AND e.data = COALESCE($2::date, (now() AT TIME ZONE u.fuso)::date)
      ORDER BY e.hora_prevista NULLS LAST, t.pai_id NULLS FIRST, t.ordem, e.id`, [req.ator.id, data])
   res.json(enfeitar(lista))
+})
+
+// Histórico da própria pessoa (§13): dias anteriores, com "hist".
+// "atrasada" = feita depois do horário + tolerância.
+r.get('/meu-historico', async (req, res) => {
+  if (req.ator.tipo !== 'colaborador') throw proibido('O admin não tem histórico de tarefas.')
+  if (!tem(req, 'hist')) throw proibido('Sem a permissão "Ver o próprio histórico".')
+  const de = v.data(req.query.de, 'o início', { obrigatorio: true })
+  const ate = v.data(req.query.ate, 'o fim', { obrigatorio: true })
+  if (ate < de) throw invalido('O fim precisa ser depois do início.')
+  const lista = await db.q(
+    `SELECT e.id, e.data, e.hora_prevista, e.estado, e.feita_em, e.foto_id, e.resposta_fora, t.titulo, t.pede_foto, t.valor_feita,
+            (e.estado = 'feita' AND e.hora_prevista IS NOT NULL AND e.feita_em >
+              ((e.data + e.hora_prevista) AT TIME ZONE u.fuso) + make_interval(mins => COALESCE(t.tolerancia_min, (emp.config->>'tol_atraso_min')::int, 10))) AS atrasada
+     FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id JOIN unidades u ON u.id = e.unidade_id JOIN empresas emp ON emp.id = e.empresa_id
+     WHERE e.colaborador_id = $1 AND e.data BETWEEN $2 AND $3 AND t.pai_id IS NULL AND e.estado IN ('feita', 'nao_feita', 'na', 'a_fazer')
+     ORDER BY e.data DESC, e.hora_prevista NULLS LAST, e.id`, [req.ator.id, de, ate])
+  res.json(lista)
+})
+
+// Pedido de liberação feito pelo Início (§10): vale para a próxima entrada
+// fora do local (até 24 h depois de aprovado). Precisa de "pedlib".
+r.post('/liberacao', async (req, res) => {
+  if (req.ator.tipo !== 'colaborador') throw proibido()
+  if (!tem(req, 'pedlib')) throw proibido('Sem a permissão "Pedir liberação".')
+  const motivo = v.umDe(req.body.motivo, 'o motivo', ['cheguei_antes', 'cobrir_outra_unidade', 'gps_nao_achou', 'outro'], { obrigatorio: true })
+  const motivoTexto = motivo === 'outro' ? v.texto(req.body.motivo_texto, 'o motivo', { obrigatorio: true, max: 140 }) : null
+  const me = await db.um('SELECT c.unidade_principal_id, u.nome, u.lat, u.lng, u.raio_m FROM colaboradores c JOIN unidades u ON u.id = c.unidade_principal_id WHERE c.id = $1', [req.ator.id])
+  let distancia = null
+  if (req.body.lat != null && req.body.lng != null && me.lat != null) {
+    const { distanciaM } = require('../lib/geo')
+    distancia = distanciaM(v.numero(req.body.lat, 'a latitude', { min: -90, max: 90 }), v.numero(req.body.lng, 'a longitude', { min: -180, max: 180 }), me.lat, me.lng)
+  }
+  const pendente = await db.um(`SELECT id FROM pedidos WHERE empresa_id = $1 AND tipo = 'lib' AND estado = 'pend' AND solicitante_tipo = 'colaborador' AND solicitante_id = $2`, [req.ator.empresaId, req.ator.id])
+  if (pendente) throw conflito('Você já tem um pedido de liberação aguardando.')
+  const TXT = { cheguei_antes: 'cheguei antes', cobrir_outra_unidade: 'vou cobrir outra unidade', gps_nao_achou: 'o GPS não achou o local' }
+  const pedido = await pedidos.criarPedido(db, req.ator, 'lib', {
+    unidadeId: me.unidade_principal_id,
+    titulo: `Liberação de login · ${req.ator.nome}`,
+    detalhe: `${me.nome}${distancia !== null ? ` · a ${distancia} m (raio ${me.raio_m} m)` : ''} · motivo: ${motivoTexto || TXT[motivo]}`,
+    payload: { colaborador_id: req.ator.id, unidade_id: me.unidade_principal_id, motivo, motivo_texto: motivoTexto, distancia_m: distancia }
+  })
+  res.status(201).json({ ok: true, pedido })
 })
 
 // Conferência: execuções da unidade num dia ou intervalo (precisa de "ver"; sem ele, só as próprias).
