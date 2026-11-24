@@ -125,7 +125,8 @@ r.put('/colaboradores/:id/perfil-acesso', exigir('acesso'), async (req, res) => 
   }
   await db.tx(async (t) => {
     await t.exec('UPDATE colaboradores SET perfil_acesso_id = $2, atualizado_em = now() WHERE id = $1', [p.id, novo])
-    await registrar(t, { empresaId: req.ator.empresaId, unidadeId: p.unidade_principal_id, ator: req.ator, acao: 'colaborador.acesso_alterado', entidade: 'colaborador', entidadeId: p.id, detalhe: { perfil_acesso_id: novo } })
+    const pf = await t.um('SELECT nome FROM perfis_acesso WHERE id = $1', [efetivo])
+    await registrar(t, { empresaId: req.ator.empresaId, unidadeId: p.unidade_principal_id, ator: req.ator, acao: 'colaborador.acesso_alterado', entidade: 'colaborador', entidadeId: p.id, detalhe: { perfil_acesso_id: novo, nome: p.nome, perfil: pf && pf.nome } })
   })
   res.json({ ok: true })
 })
@@ -199,7 +200,7 @@ r.get('/registro-atividades', exigir('log'), async (req, res) => {
   res.json(await db.q(
     `SELECT id, unidade_id, quem_tipo, quem_id, quem_nome, acao, entidade, entidade_id, detalhe, em FROM registro_atividades
      WHERE empresa_id = $1 AND ($2::bigint[] IS NULL OR unidade_id = ANY($2)) AND ($3::text IS NULL OR acao LIKE $3 || '%')
-     ORDER BY em DESC LIMIT 300`, [req.ator.empresaId, unidades, acao]))
+     ORDER BY id DESC LIMIT 300`, [req.ator.empresaId, unidades, acao]))   // na ordem em que foi registrado (logInner da v45)
 })
 
 module.exports = r

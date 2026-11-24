@@ -146,7 +146,7 @@ async function criarAcao(dbx, { unidade, exec, tarefa, tipo, motivo, agora }) {
      ON CONFLICT (execucao_id, tipo) WHERE estado = 'aberta' DO NOTHING RETURNING id`,
     [unidade.empresa_id, unidade.id, exec.id, tipo, motivo, tarefa.porque, agora, prazo, resp.tipo, resp.id])
   if (a) {
-    await registrar(dbx, { empresaId: unidade.empresa_id, unidadeId: unidade.id, ator: { tipo: 'sistema' }, acao: `acao.criada_${tipo}`, entidade: 'acao', entidadeId: a.id, detalhe: { execucao_id: exec.id, motivo } })
+    await registrar(dbx, { empresaId: unidade.empresa_id, unidadeId: unidade.id, ator: { tipo: 'sistema' }, acao: `acao.criada_${tipo}`, entidade: 'acao', entidadeId: a.id, detalhe: { execucao_id: exec.id, tarefa: tarefa.titulo, motivo } })
   }
   return a
 }
@@ -162,7 +162,7 @@ async function marcarNaoFeita(dbx, unidade, exec, tarefa, agora) {
 
 async function vencer(dbx, unidade, agora) {
   const execs = await dbx.q(
-    `SELECT e.*, t.nf_min, t.prazo_acao_min, t.porque, t.pai_id FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id
+    `SELECT e.*, t.nf_min, t.prazo_acao_min, t.porque, t.pai_id, t.titulo FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id
      WHERE e.unidade_id = $1 AND e.estado = 'a_fazer' AND e.data <= $2 AND e.legado_execucao_id IS NULL`,
     [unidade.id, tempo.hoje(unidade.fuso, agora)])
   let n = 0

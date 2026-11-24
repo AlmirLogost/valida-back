@@ -9,8 +9,8 @@
 //   DB_NAME=valida_ensaio SEED_SENHA_ADMIN=… SEED_PIN=…… RELOGIO_FIXO=10:00 node scripts/seed_v45.js
 const path = require('path')
 require('dotenv').config({ path: path.join(__dirname, '..', '.env'), quiet: true })
-if (process.env.DB_NAME !== 'valida_ensaio') {
-  console.error('❌ O seed da v45 só roda no valida_ensaio (DB_NAME=valida_ensaio).')
+if (!require('../src/lib/ensaio').ehEnsaio(process.env.DB_NAME)) {
+  console.error('❌ O seed da v45 só roda num banco de ensaio (valida_ensaio, valida_visual ou valida_teste).')
   process.exit(1)
 }
 const host = process.env.DB_HOST || 'localhost'
@@ -65,10 +65,14 @@ async function main() {
     await garantirPerfisFixos(t, e.id)
 
     const U = {}
+    // Horários de mkSem() da v45 (Centro: seg–sex 07–15 e 18–23, sáb–dom 10–23;
+    // Shopping: seg–sáb 10–22, domingo fechado; Xaxim: 3 turnos todo dia).
+    // A Shopping fica sem local de entrada, como na v45.
+    const fds = (d) => d === 0 || d === 6
     const unidades = [
-      ['centro', 'Bezin Centro', 'Pinhalzinho', -26.8497, -52.9921, true, [0, 1, 2, 3, 4, 5, 6].map((d) => ({ dia_semana: d, ativo: true, turnos: [{ abre: '06:00', fecha: '23:00' }] }))],
-      ['shopping', 'Bezin Shopping', 'Chapecó', -27.1004, -52.6152, false, [0, 1, 2, 3, 4, 5, 6].map((d) => ({ dia_semana: d, ativo: d !== 0, turnos: d ? [{ abre: '10:00', fecha: '22:00' }] : [] }))],
-      ['xaxim', 'Bezin Xaxim', 'Xaxim', -26.9616, -52.5346, true, [0, 1, 2, 3, 4, 5, 6].map((d) => ({ dia_semana: d, ativo: true, turnos: [{ abre: '06:00', fecha: '11:00' }, { abre: '11:30', fecha: '15:00' }, { abre: '17:00', fecha: '23:00' }] }))]
+      ['centro', 'Bezin Centro', 'Pinhalzinho', -26.8497, -52.9921, true, [0, 1, 2, 3, 4, 5, 6].map((d) => ({ dia_semana: d, ativo: true, turnos: fds(d) ? [{ abre: '10:00', fecha: '23:00' }] : [{ abre: '07:00', fecha: '15:00' }, { abre: '18:00', fecha: '23:00' }] }))],
+      ['shopping', 'Bezin Shopping', 'Chapecó', null, null, false, [0, 1, 2, 3, 4, 5, 6].map((d) => ({ dia_semana: d, ativo: d !== 0, turnos: d ? [{ abre: '10:00', fecha: '22:00' }] : [] }))],
+      ['xaxim', 'Bezin Xaxim', 'Xaxim', -26.9616, -52.5346, true, [0, 1, 2, 3, 4, 5, 6].map((d) => ({ dia_semana: d, ativo: true, turnos: [{ abre: '06:00', fecha: '12:00' }, { abre: '12:00', fecha: '18:00' }, { abre: '18:00', fecha: '23:00' }] }))]
     ]
     for (const [k, nome, cidade, lat, lng, aberta, semana] of unidades) {
       const u = await t.um(
@@ -171,8 +175,63 @@ async function main() {
     }
   }
 
+  // Histórico das outras pessoas (repCalc da v45, para os Relatórios): 13 dias
+  // antes de hoje, todas as tarefas de cada um. Feita quando
+  // hsh(tarefa+pessoa+dia) % 5 != 0; atrasada quando hsh(...+'a') % 9 == 0.
+  for (const [nome, p] of Object.entries(ids.pessoas)) {
+    if (nome === 'Pedro' || nome === 'Bruna') continue
+    for (let d = 1; d <= 13; d++) {
+      const dia = tempo.somarDias(hoje, -d)
+      for (const tk of p.tarefas) {
+        const feita = hsh(tk.titulo + nome + dia) % 5 !== 0
+        const atraso = feita && hsh(tk.titulo + nome + dia + 'a') % 9 === 0
+        const [h, mi] = tk.hora.split(':').map(Number)
+        const min = h * 60 + mi + (atraso ? 25 : 3)
+        const em = feita ? tempo.momento(dia, `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`, FUSO) : null
+        await db.exec(
+          `INSERT INTO execucoes (empresa_id, tarefa_id, colaborador_id, unidade_id, data, hora_prevista, estado, feita_em, recebida_em)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`,
+          [ids.empresa, tk.id, p.id, p.unidade, dia, tk.hora, feita ? 'feita' : 'nao_feita', em])
+      }
+    }
+  }
+
+  // Dados de exemplo da v45 para a Parte C: dias fechados (CLOSED), manual da
+  // marca (MAN), dados da empresa (EMP), notificações (CFG) e o registro (LOGS).
+  const U = ids.U
+  const dia = async (data, motivo, unidades, rep, h) => {
+    const d = await db.um(`INSERT INTO dias_fechados (empresa_id, data, motivo, todas_unidades, repetir_anual, hora_ini, hora_fim) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [ids.empresa, data, motivo, !unidades, rep, h ? h[0] : null, h ? h[1] : null])
+    for (const u of unidades || []) await db.exec('INSERT INTO dias_fechados_unidades (dia_fechado_id, unidade_id) VALUES ($1, $2)', [d.id, u])
+  }
+  const ano = Number(hoje.slice(0, 4))
+  await dia(`${ano}-11-20`, 'Consciência Negra', null, true)
+  await dia(`${ano}-12-25`, 'Natal', null, true)
+  await dia(`${ano + 1}-01-01`, 'Confraternização Universal', null, true)
+  await dia(`${ano}-12-08`, 'Reforma do salão', [U.shopping], false)
+  await dia(`${ano}-11-27`, 'Manutenção da cozinha', [U.centro], false, ['06:00', '12:00'])
+  const MAN = [['Boas-vindas à equipe', 'Aqui você encontra como trabalhamos. Chegue no horário, siga o checklist do dia e peça ajuda ao seu gerente sempre que tiver dúvida.\n\nCada tarefa feita no prazo conta para o seu bônus.'],
+    ['Padrão de qualidade', 'Siga o passo a passo de cada tarefa e registre a foto quando for pedida. O padrão da marca é o mesmo em todas as unidades.'],
+    ['Apresentação e higiene', 'Uniforme limpo, cabelo preso e mãos higienizadas. Em caso de dúvida, fale com seu gerente antes de começar.']]
+  for (const [i, [titulo, texto]] of MAN.entries()) await db.exec('INSERT INTO manual_documentos (empresa_id, titulo, texto, ordem) VALUES ($1, $2, $3, $4)', [ids.empresa, titulo, texto, i + 1])
+  await db.exec(`UPDATE empresas SET razao_social = 'Upper Franqueadora Ltda', cnpj = '12.345.678/0001-90', endereco = 'Rua das Flores, 100', cidade = 'Pinhalzinho', uf = 'SC',
+    email = 'contato@upperfranqueadora.com.br', telefone = '(49) 3366-0000', segmento = 'Restaurante' WHERE id = $1`, [ids.empresa])
+  await db.exec(`UPDATE config_notificacoes SET repetir_min = 15, resumo_whatsapp = true WHERE unidade_id = ANY($1)`, [Object.values(U)])
+  const adm = await db.um('SELECT id FROM admins WHERE empresa_id = $1', [ids.empresa])
+  const quem = { Almir: ['admin', adm.id], Marcos: ['colaborador', ids.pessoas.Marcos.id] }
+  const LOG = [[0, '10:42', 'Marcos', 'colaborador.cadastro_pendente', { nome: 'Julia' }], [0, '09:15', 'Almir', 'rg.feito', { titulo: 'Regra do bônus · Pedro' }],
+    [0, '08:03', 'Almir', 'tsave.feito', { titulo: 'Nova tarefa · Limpeza de bancadas', detalhe: 'Limpeza de bancadas · 14:00' }], [1, '18:30', 'Almir', 'pedido.aprovado', { tipo: 'cad', titulo: 'Cadastrar · Henri' }],
+    [1, '16:12', 'Marcos', 'execucao.aprovada', { tarefa: 'Abertura da unidade' }], [1, '11:47', 'Almir', 'arq.feito', { titulo: 'Arquivar · Carla' }],
+    [2, '14:20', 'Almir', 'colaborador.acesso_alterado', { nome: 'Marcos', perfil: 'Gerente' }], [2, '09:05', 'Almir', 'usem.feito', { titulo: 'Alterar horário e local · Bezin Centro' }]]
+  for (const [d, h, nome, acao, det] of LOG.slice().reverse()) {   // do mais antigo ao mais novo
+    await db.exec(`INSERT INTO registro_atividades (empresa_id, unidade_id, quem_tipo, quem_id, quem_nome, acao, detalhe, em) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [ids.empresa, U.centro, quem[nome][0], quem[nome][1], nome, acao, JSON.stringify(det), tempo.momento(tempo.somarDias(hoje, -d), h, FUSO)])
+  }
+
   // Agora (relógio do teste): vence o que passou do limite e abre as ações.
   for (const u of Object.values(ids.U)) await db.tx((x) => agenda.processarUnidade(x, u, agora))
+  // O registro das ações abertas agora fica no horário do relógio do teste.
+  await db.exec(`UPDATE registro_atividades SET em = $2 WHERE empresa_id = $1 AND acao LIKE 'acao.criada%'`, [ids.empresa, agora])
   const n = await db.um(`SELECT COUNT(*)::int AS e, COUNT(*) FILTER (WHERE estado = 'feita')::int AS f FROM execucoes WHERE empresa_id = $1`, [ids.empresa])
   console.log(`✅ Seed v45: empresa ${ids.empresa}, ${Object.keys(ids.pessoas).length} pessoas, ${n.e} execuções de hoje (${n.f} feitas).`)
   await db.fechar()

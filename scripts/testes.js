@@ -1,9 +1,9 @@
 // npm test: roda os testes automáticos SEMPRE no banco de ensaio.
 //
-// 1. Recria o valida_ensaio a partir do backup mais recente em BACKUPS-VALIDA/
+// 1. Recria o valida_teste a partir do backup mais recente em BACKUPS-VALIDA/
 //    (ou do arquivo em TESTE_DUMP).
 // 2. Aplica as migrations nele (scripts/migrar.js).
-// 3. Roda node --test test/ com DB_NAME=valida_ensaio.
+// 3. Roda node --test test/ com DB_NAME=valida_teste.
 // Segredos de teste (JWT_SECRET, PIN_CIFRA_CHAVE) são gerados na hora, só
 // para este processo; nada fica gravado. Envio sempre simulado.
 // Nunca toca no banco local nem em produção.
@@ -32,7 +32,7 @@ if (!dump) {
 
 const env = {
   ...process.env,
-  DB_NAME: 'valida_ensaio',
+  DB_NAME: 'valida_teste',   // banco próprio dos testes (não apaga a demonstração)
   JWT_SECRET: crypto.randomBytes(32).toString('hex'),
   PIN_CIFRA_CHAVE: crypto.randomBytes(32).toString('hex'),
   ENVIO_SIMULADO: 'true',

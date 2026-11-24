@@ -1,0 +1,8 @@
+DROP TABLE IF EXISTS cadastro_codigos;
+ALTER TABLE empresas DROP COLUMN IF EXISTS exclusao_pedida_em;
+ALTER TABLE empresas DROP COLUMN IF EXISTS telefone;
+ALTER TABLE empresas DROP COLUMN IF EXISTS email;
+ALTER TABLE empresas DROP COLUMN IF EXISTS uf;
+ALTER TABLE empresas DROP COLUMN IF EXISTS cidade;
+ALTER TABLE empresas DROP COLUMN IF EXISTS endereco;
+ALTER TABLE empresas DROP COLUMN IF EXISTS razao_social;

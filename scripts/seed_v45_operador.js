@@ -5,7 +5,7 @@
 // telas do operador. SÓ no banco de ensaio. Uso: DB_NAME=valida_ensaio node scripts/seed_v45_operador.js
 const path = require('path')
 require('dotenv').config({ path: path.join(__dirname, '..', '.env'), quiet: true })
-if (process.env.DB_NAME !== 'valida_ensaio') { console.error('❌ Só no valida_ensaio.'); process.exit(1) }
+if (!require('../src/lib/ensaio').ehEnsaio(process.env.DB_NAME)) { console.error('❌ Só num banco de ensaio.'); process.exit(1) }
 const db = require('../src/db')
 const tempo = require('../src/lib/tempo')
 const agenda = require('../src/servicos/agenda')

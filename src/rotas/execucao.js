@@ -279,7 +279,33 @@ async function dadosRelatorio(req) {
   }
 }
 
-r.get('/relatorios', exigir('rel'), async (req, res) => res.json(await dadosRelatorio(req)))
+// ?itens=1: cada execução do período (o app monta Resumo, Dia a dia, Pessoas e
+// Tarefas igual à v45). "atrasada" = feita depois do horário + tolerância.
+// Com colaborador_id, também as entradas atrasadas pela localização.
+r.get('/relatorios', exigir('rel'), async (req, res) => {
+  const out = await dadosRelatorio(req)
+  if (req.query.itens === '1') {
+    const pessoa = v.inteiro(req.query.colaborador_id, 'a pessoa', { min: 1 })
+    out.itens = await db.q(
+      `SELECT e.id, e.data, e.hora_prevista, e.estado, t.titulo, e.colaborador_id, c.nome AS pessoa, cg.perfil, e.unidade_id,
+              (e.estado = 'feita' AND e.hora_prevista IS NOT NULL AND e.feita_em >
+                ((e.data + e.hora_prevista) AT TIME ZONE u.fuso) + make_interval(mins => COALESCE(t.tolerancia_min, (emp.config->>'tol_atraso_min')::int, 10))) AS atrasada
+       FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id JOIN colaboradores c ON c.id = e.colaborador_id JOIN cargos cg ON cg.id = c.cargo_id
+       JOIN unidades u ON u.id = e.unidade_id JOIN empresas emp ON emp.id = e.empresa_id
+       WHERE e.empresa_id = $1 AND e.unidade_id = ANY($2) AND e.data BETWEEN $3 AND $4 AND t.pai_id IS NULL
+         AND e.estado IN ('feita', 'nao_feita', 'na', 'a_fazer') AND c.situacao = 'ativo' AND ($5::bigint IS NULL OR e.colaborador_id = $5)
+       ORDER BY e.data DESC, c.id, e.hora_prevista NULLS LAST, e.id`,
+      [req.ator.empresaId, out.unidades, out.de, out.ate, pessoa])
+    if (pessoa) {
+      const l = await db.um(
+        `SELECT COUNT(*)::int AS n FROM logins l JOIN colaboradores c ON c.id = l.colaborador_id
+         WHERE l.colaborador_id = $1 AND c.empresa_id = $2 AND (l.em AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $3 AND $4
+           AND COALESCE(l.atraso_min, 0) > COALESCE(c.login_tol_min, 0)`, [pessoa, req.ator.empresaId, out.de, out.ate])
+      out.entradas_atrasadas = l.n
+    }
+  }
+  res.json(out)
+})
 
 // CSV (separador ";" e BOM, abre direto no Excel). xlsx precisaria de biblioteca nova.
 function csv(linhas, colunas) {

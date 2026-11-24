@@ -4,8 +4,8 @@
 const crypto = require('crypto')
 const assert = require('node:assert/strict')
 
-if (process.env.DB_NAME !== 'valida_ensaio') {
-  throw new Error('Os testes só rodam no valida_ensaio (use npm test).')
+if (process.env.DB_NAME !== 'valida_teste') {
+  throw new Error('Os testes só rodam no valida_teste (use npm test).')
 }
 
 const db = require('../src/db')

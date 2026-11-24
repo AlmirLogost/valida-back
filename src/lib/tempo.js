@@ -53,7 +53,7 @@ const ultimoDiaDoMes = (data) => {
 // no ambiente de teste"). Em qualquer outro banco é sempre a hora real.
 function agora() {
   const fixo = process.env.RELOGIO_FIXO
-  if (fixo && process.env.DB_NAME === 'valida_ensaio' && /^([01]\d|2[0-3]):[0-5]\d$/.test(fixo)) {
+  if (fixo && require('./ensaio').ehEnsaio(process.env.DB_NAME) && /^([01]\d|2[0-3]):[0-5]\d$/.test(fixo)) {
     return momento(hoje(config.fusoPadrao), fixo, config.fusoPadrao)
   }
   return new Date()

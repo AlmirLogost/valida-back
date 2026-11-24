@@ -8,7 +8,7 @@ const { distanciaM } = require('../lib/geo')
 const tempo = require('../lib/tempo')
 const { enviar } = require('../lib/envio')
 const { registrar } = require('../lib/registro')
-const { naoAutenticado, proibido, naoEncontrado, invalido } = require('../lib/erros')
+const { naoAutenticado, proibido, naoEncontrado, invalido, conflito } = require('../lib/erros')
 const tentativas = require('../auth/tentativas')
 const { assinar, autenticar, carregarAtor } = require('../auth/sessao')
 const pedidos = require('../pedidos/servico')
@@ -60,6 +60,73 @@ r.post('/auth/admin/entrar', async (req, res) => {
 
 // Motivos da liberação (§10).
 const MOTIVOS = { cheguei_antes: 'cheguei antes', cobrir_outra_unidade: 'vou cobrir outra unidade', gps_nao_achou: 'o GPS não achou o local' }
+
+// ---- Cadastro de cliente novo (§21) -----------------------------------------
+// 1) /cadastro/codigo: manda um código de 6 números ao WhatsApp (envio
+//    SIMULADO nesta fase: vai para a caixa local, nunca para fora).
+// 2) /cadastro: confere o código e cria empresa (trial de 30 dias, sem dados de
+//    pagamento), admin, primeira unidade, cargos e perfis; já devolve a sessão.
+const { randomInt } = require('crypto')
+r.get('/planos', async (req, res) => {
+  res.json(await db.q('SELECT slug, nome, preco_mensal, unidades_inclusas, max_unidades, max_colaboradores, preco_unidade_extra, meses_cobrados_no_anual FROM planos_catalogo WHERE ativo ORDER BY preco_mensal'))
+})
+r.post('/cadastro/codigo', async (req, res) => {
+  const celular = v.celular(req.body.celular, { obrigatorio: true })
+  const chave = `cadastro:${req.ip}`
+  await tentativas.conferirBloqueio('admin', chave)
+  await tentativas.falhou('admin', chave, { maxFalhas: 10 })   // cada envio conta: no máximo 10 por janela
+  const codigo = String(randomInt(0, 1000000)).padStart(6, '0')
+  await db.exec(`INSERT INTO cadastro_codigos (celular, codigo_hash, expira_em) VALUES ($1, $2, now() + interval '15 minutes')`, [celular, sha256(`${celular}:${codigo}`)])
+  await enviar({ canal: 'whatsapp', destino: celular, assunto: 'Código Valida', texto: `Seu código do Valida é ${codigo}. Vale por 15 minutos.` })
+  res.json({ ok: true, expira_min: 15 })
+})
+r.post('/cadastro', async (req, res) => {
+  const b = req.body
+  const nome = v.texto(b.nome, 'seu nome', { obrigatorio: true, max: 80 })
+  const celular = v.celular(b.celular, { obrigatorio: true })
+  const email = v.email(b.email, { obrigatorio: true })
+  const senha = v.texto(b.senha, 'a senha', { obrigatorio: true, max: 200 })
+  if (senha.length < 8) throw invalido('A senha precisa ter 8 caracteres ou mais.')
+  if (b.aceite_termos !== true) throw invalido('Aceite os termos para continuar.')
+  const plano = b.plano == null ? null : v.umDe(b.plano, 'o plano', ['ess', 'pro', 'rede'])
+  const ciclo = v.umDe(b.ciclo ?? 'mensal', 'o ciclo', ['mensal', 'anual'])
+  const empresa = v.texto(b.empresa, 'o nome da empresa', { obrigatorio: true, max: 120 })
+  const segmento = v.texto(b.segmento, 'o segmento', { max: 40 })
+  const unidadeNome = v.texto(b.unidade, 'o nome da unidade', { obrigatorio: true, max: 80 })
+  const cidade = v.texto(b.cidade, 'a cidade', { max: 80 })
+  const dias = [...new Set(v.lista(b.dias ?? [1, 2, 3, 4, 5, 6], 'os dias').map((d) => v.inteiro(d, 'o dia', { obrigatorio: true, min: 0, max: 6 })))]
+  const codigo = String(b.codigo || '').replace(/\D/g, '')
+  await tentativas.conferirBloqueio('admin', `cadcod:${celular}`)
+  const c = await db.um(`SELECT id, codigo_hash FROM cadastro_codigos WHERE celular = $1 AND usado_em IS NULL AND expira_em > now() ORDER BY criado_em DESC LIMIT 1`, [celular])
+  if (!c || c.codigo_hash !== sha256(`${celular}:${codigo}`)) {
+    await tentativas.falhou('admin', `cadcod:${celular}`)
+    throw invalido('Código incorreto ou vencido. Peça outro.')
+  }
+  if (await db.um('SELECT 1 FROM admins WHERE lower(email) = $1', [email])) throw conflito('Esse e-mail já tem conta. Use "Já tenho conta".')
+  const pc = plano ? await db.um('SELECT * FROM planos_catalogo WHERE slug = $1', [plano]) : null
+  const { garantirPerfisFixos, criarCargosPadrao } = require('../servicos/padroes')
+  const servUnid = require('../servicos/unidades')
+  const adminId = await db.tx(async (t) => {
+    await t.exec('UPDATE cadastro_codigos SET usado_em = now() WHERE id = $1', [c.id])
+    const e = await t.um(
+      `INSERT INTO empresas (nome, segmento, plano, ciclo, situacao, trial_ate, config) VALUES ($1, $2, $3, $4, 'teste', $6,
+         '{"nf_padrao_min": 120, "tol_atraso_min": 10, "raio_padrao_m": 100}'::jsonb || jsonb_build_object('trial_completo', $5::boolean)) RETURNING id`,
+      [empresa, segmento, plano, ciclo, !plano, new Date(tempo.agora().getTime() + 30 * 86400000)])
+    await t.exec(`INSERT INTO assinaturas (empresa_id, plano, ciclo, valor, situacao) VALUES ($1, $2, $3, $4, 'teste')`, [e.id, plano, ciclo, pc ? pc.preco_mensal : null])
+    const a = await t.um('INSERT INTO admins (empresa_id, nome, email, celular, senha_hash) VALUES ($1, $2, $3, $4, $5) RETURNING id', [e.id, nome, email, celular, await hashSenha(senha)])
+    await garantirPerfisFixos(t, e.id)
+    const u = await t.um(`INSERT INTO unidades (empresa_id, nome, cidade, raio_m) VALUES ($1, $2, $3, 100) RETURNING id`, [e.id, unidadeNome, cidade])
+    await criarCargosPadrao(t, e.id, u.id)
+    await t.exec('INSERT INTO config_notificacoes (unidade_id) VALUES ($1)', [u.id])
+    // Horário inicial 08:00–18:00 nos dias escolhidos (ajustável em Horário e local).
+    await servUnid.gravarDias(t, u.id, [0, 1, 2, 3, 4, 5, 6].map((d) => ({ dia_semana: d, ativo: dias.includes(d), turnos: dias.includes(d) ? [{ abre: '08:00', fecha: '18:00' }] : [] })))
+    await registrar(t, { empresaId: e.id, ator: { tipo: 'admin', id: a.id, nome }, acao: 'empresa.criada', entidade: 'empresa', entidadeId: e.id, detalhe: { plano, ciclo, segmento } })
+    return a.id
+  })
+  await tentativas.acertou('admin', `cadcod:${celular}`)
+  const { ator, acesso } = await carregarAtor('admin', adminId)
+  res.status(201).json(respostaSessao(ator, acesso))
+})
 
 // ---- Equipe: celular + PIN + localização ------------------------------------
 // Respostas além do token: estado = escolher_unidade | localizacao_necessaria |

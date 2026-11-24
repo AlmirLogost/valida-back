@@ -1,9 +1,10 @@
 // Cria, copia ou apaga o banco de ENSAIO (cópia descartável), usado para
 // testar migrations antes de aplicá-las no banco local de verdade.
 //
-// O nome do banco de ensaio é FIXO ("valida_ensaio") — não aceita outro
-// nome por argumento, de propósito, pra este script nunca poder apagar
-// nem criar nada além disso.
+// O nome vem de DB_NAME e PRECISA estar na lista fechada de bancos de ensaio
+// (src/lib/ensaio.js: valida_ensaio, valida_visual, valida_teste). Qualquer
+// outro nome é recusado, pra este script nunca poder apagar nem criar nada
+// além disso. Sem DB_NAME de ensaio, usa valida_ensaio.
 //
 // Usa o driver "pg" para criar/apagar (conectando no banco de manutenção
 // "postgres") e o pg_restore para a cópia. A senha vai para o pg_restore
@@ -30,7 +31,9 @@ const fs = require('fs')
 const path = require('path')
 const { spawnSync } = require('child_process')
 const { Client } = require('pg')
-const NOME_ENSAIO = 'valida_ensaio'
+const { ehEnsaio } = require('../src/lib/ensaio')
+const NOME_ENSAIO = ehEnsaio(process.env.DB_NAME) ? process.env.DB_NAME : 'valida_ensaio'
+if (!/^valida_[a-z]+$/.test(NOME_ENSAIO) || !ehEnsaio(NOME_ENSAIO)) { console.error('❌ Banco de ensaio inválido.'); process.exit(1) }
 
 const config = {
   host,
@@ -65,9 +68,8 @@ async function main() {
   const client = new Client(config)
   await client.connect()
   try {
-    // DROP não aceita parâmetro ($1) no nome do banco — mas como o nome é
-    // uma constante fixa no código (nunca vem de fora), não há risco de
-    // injeção aqui.
+    // DROP não aceita parâmetro ($1) no nome do banco — mas o nome só pode
+    // ser um da lista fechada (conferido acima), então não há risco de injeção.
     await client.query(`DROP DATABASE IF EXISTS ${NOME_ENSAIO} WITH (FORCE)`)
     console.log(`  (qualquer ${NOME_ENSAIO} anterior foi removido)`)
 
