@@ -16,6 +16,8 @@
 //   node scripts/ensaio_db.js criar                 -> cria valida_ensaio vazio
 //   node scripts/ensaio_db.js copiar <arquivo.dump> -> recria valida_ensaio a partir
 //                                                      de um backup (scripts/backup_banco.js)
+//   node scripts/ensaio_db.js estrutura <arquivo.sql> -> recria valida_ensaio a partir
+//                                                      de um pg_dump --schema-only
 //   node scripts/ensaio_db.js apagar                -> apaga valida_ensaio
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env'), quiet: true })
@@ -52,8 +54,8 @@ function binario(nome) {
 
 async function main() {
   const acao = process.argv[2]
-  if (!['criar', 'copiar', 'apagar'].includes(acao)) {
-    console.error('Uso: node scripts/ensaio_db.js criar | copiar <arquivo.dump> | apagar')
+  if (!['criar', 'copiar', 'estrutura', 'apagar'].includes(acao)) {
+    console.error('Uso: node scripts/ensaio_db.js criar | copiar <arquivo.dump> | estrutura <arquivo.sql> | apagar')
     process.exit(1)
   }
   let dump = null
@@ -61,6 +63,14 @@ async function main() {
     dump = process.argv[3] && path.resolve(process.argv[3])
     if (!dump || !fs.existsSync(dump) || !dump.endsWith('.dump')) {
       console.error('❌ Informe um arquivo .dump existente (gerado por scripts/backup_banco.js).')
+      process.exit(1)
+    }
+  }
+
+  if (acao === 'estrutura') {
+    dump = process.argv[3] && path.resolve(process.argv[3])
+    if (!dump || !fs.existsSync(dump) || !dump.endsWith('.sql')) {
+      console.error('❌ Informe um arquivo .sql existente (pg_dump --schema-only).')
       process.exit(1)
     }
   }
@@ -84,6 +94,14 @@ async function main() {
     }
   } finally {
     await client.end()
+  }
+
+  if (acao === 'estrutura') {
+    const e = spawnSync(binario('psql'), ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-1', '-h', host, '-p', String(config.port), '-U', config.user, '-d', NOME_ENSAIO, '-f', dump],
+      { env: { ...process.env, PGPASSWORD: config.password }, stdio: ['ignore', 'ignore', 'pipe'] })
+    if (e.status !== 0) { console.error(`❌ psql falhou (código ${e.status}).`); process.exit(1) }
+    console.log(`✅ ${NOME_ENSAIO} recriado com a estrutura de ${path.basename(dump)} (sem dados).`)
+    return
   }
 
   const r = spawnSync(binario('pg_restore'), [

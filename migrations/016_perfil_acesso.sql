@@ -42,5 +42,6 @@ INSERT INTO usuario_lojas (usuario_id, loja_id)
 SELECT u.id, u.loja_id
 FROM usuarios u
 WHERE u.loja_id IS NOT NULL
+  AND EXISTS (SELECT 1 FROM lojas l WHERE l.id = u.loja_id)   -- unidade que não existe mais: sem vínculo
   AND NOT EXISTS (SELECT 1 FROM usuario_lojas ul WHERE ul.usuario_id = u.id)
 ON CONFLICT DO NOTHING;

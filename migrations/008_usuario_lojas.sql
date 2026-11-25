@@ -21,5 +21,8 @@ CREATE INDEX IF NOT EXISTS idx_usuario_lojas_usuario ON usuario_lojas(usuario_id
 CREATE INDEX IF NOT EXISTS idx_usuario_lojas_loja ON usuario_lojas(loja_id);
 
 INSERT INTO usuario_lojas (usuario_id, loja_id)
-SELECT id, loja_id FROM usuarios WHERE loja_id IS NOT NULL
+SELECT u.id, u.loja_id FROM usuarios u
+WHERE u.loja_id IS NOT NULL
+  -- pessoa de unidade que não existe mais (o legado não tinha FK): sem vínculo
+  AND EXISTS (SELECT 1 FROM lojas l WHERE l.id = u.loja_id)
 ON CONFLICT (usuario_id, loja_id) DO NOTHING;

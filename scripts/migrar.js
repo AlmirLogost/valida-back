@@ -37,6 +37,23 @@ const { Client } = require('pg')
 const DIR = path.join(__dirname, '..', 'migrations')
 const PRIMEIRA_COM_DOWN = 20
 const TRAVA = 4815162342 // número fixo da trava do runner
+// Exceção única à regra "não se edita migration aplicada": a 008 e a 016 passaram
+// a pular pessoas de unidade inexistente (num banco antigo, com esses dados,
+// elas paravam a migração). Onde já rodaram, o resultado é o mesmo: o hash
+// anterior continua aceito. Lista fechada.
+const HASH_ANTERIOR = {
+  8: '2ee013b03bbe41ff3f9937df52989da6822ffbddb3482a69e04cbe535cd1d277',
+  16: 'a90ce202b958f2fb480498a7b075acdec7906dabce838f2788f5429d1bfb8a28'
+}
+// O que as 001–019 precisam ter deixado pronto. Sem isto, elas não são
+// registradas e nada depois da 020 roda (um banco antigo nunca passa por novo).
+const LEGADO_PRONTO = {
+  planos: ['slug'], subscriptions: ['admin_id'], lojas: ['admin_id', 'arquivado_em', 'arquivado_por'],
+  usuarios: ['razao_social', 'whatsapp', 'documento', 'email_cobranca', 'cep', 'endereco', 'cidade', 'estado', 'arquivado_em', 'arquivado_por'],
+  perfis: ['admin_id', 'escopo', 'descricao', 'perfil_acesso'], perfil_permissoes: ['modulo', 'acao', 'permitido'], usuario_lojas: ['loja_id'],
+  perfil_lojas: ['loja_id'], auditoria: ['detalhes'], checklists: ['data_pontual', 'tipo'], execucoes: ['status_conferencia'],
+  checklist_cargos: ['perfil_nome'], onboarding_progresso: ['concluido']
+}
 const RE_ARQUIVO = /^(\d{3})_([a-z0-9_]+?)(?:\.(up|down))?\.sql$/
 
 // ---------------------------------------------------------------------------
@@ -119,10 +136,19 @@ async function tabelaControleExiste(client) {
   return r.rows[0].existe === true
 }
 
+const alterada = (it, f) => f.hash !== it.hash && f.hash !== HASH_ANTERIOR[it.versao]
+
 async function aplicadas(client) {
   if (!(await tabelaControleExiste(client))) return new Map()
   const r = await client.query('SELECT versao, nome, hash, aplicada_em FROM schema_migrations ORDER BY versao')
   return new Map(r.rows.map((x) => [x.versao, x]))
+}
+
+// Colunas das 001–019 que faltam no banco (antes de a 027/034 renomearem tabelas).
+async function faltaDoLegado(client) {
+  const r = await client.query(`SELECT table_name || '.' || column_name AS c FROM information_schema.columns WHERE table_schema = 'public'`)
+  const tem = new Set(r.rows.map((x) => x.c))
+  return Object.entries(LEGADO_PRONTO).flatMap(([t, cols]) => cols.map((c) => `${t}.${c}`)).filter((c) => !tem.has(c))
 }
 
 async function registrar(client, it) {
@@ -168,14 +194,14 @@ async function main() {
     const feitas = await aplicadas(client)
 
     // Arquivo alterado depois de aplicado = alerta.
-    const alterados = migrations.filter((it) => feitas.has(it.versao) && feitas.get(it.versao).hash !== it.hash)
+    const alterados = migrations.filter((it) => feitas.has(it.versao) && alterada(it, feitas.get(it.versao)))
     // Registro sem arquivo = alerta.
     const semArquivo = [...feitas.keys()].filter((v) => !migrations.some((it) => it.versao === v))
 
     if (opcoes.status) {
       for (const it of migrations) {
         const f = feitas.get(it.versao)
-        const marca = f ? (f.hash !== it.hash ? '⚠️  aplicada, arquivo ALTERADO depois' : `✅ aplicada em ${new Date(f.aplicada_em).toISOString()}`) : '…  pendente'
+        const marca = f ? (alterada(it, f) ? '⚠️  aplicada, arquivo ALTERADO depois' : `✅ aplicada em ${new Date(f.aplicada_em).toISOString()}`) : '…  pendente'
         console.log(`  ${it.rotulo.padEnd(42)} ${marca}${it.versao < PRIMEIRA_COM_DOWN ? ' (legado, sem down)' : ''}`)
       }
       for (const v of semArquivo) console.log(`  ${String(v).padStart(3, '0')} ⚠️  registrada no banco, mas o arquivo não existe`)
@@ -190,6 +216,12 @@ async function main() {
     if (opcoes.down) {
       await desfazerUltima(client, migrations, feitas)
       return
+    }
+
+    // Registradas como aplicadas, mas sem a estrutura: alguém marcou sem rodar.
+    if (feitas.has(19) && !feitas.has(27)) {
+      const falta = await faltaDoLegado(client)
+      if (falta.length) sair(`As 001–019 constam como aplicadas, mas o banco não tem a estrutura delas (${falta.length} coluna(s), ex.: ${falta.slice(0, 3).join(', ')}). Nada foi aplicado. Desfaça até a 020 (--down) e rode de novo: elas são executadas outra vez.`)
     }
 
     let pendentes = migrations.filter((it) => !feitas.has(it.versao))
@@ -224,6 +256,11 @@ async function main() {
         await client.query(it.sqlUp)
         filaRegistro.push(it)
         if (await tabelaControleExiste(client)) {
+          // Só registra o legado depois de conferir que ele está mesmo no banco.
+          if (filaRegistro.some((x) => x.versao < PRIMEIRA_COM_DOWN)) {
+            const falta = await faltaDoLegado(client)
+            if (falta.length) throw Object.assign(new Error(`as 001–019 não deixaram a estrutura esperada (falta ${falta.slice(0, 5).join(', ')})`), { code: 'P0001' })
+          }
           for (const x of filaRegistro) await registrar(client, x)
           filaRegistro.length = 0
         }

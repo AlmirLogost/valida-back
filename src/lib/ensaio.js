@@ -3,7 +3,8 @@
 //   valida_ensaio  → demonstração (npm run demo) e ensaio de migrations
 //   valida_visual  → teste visual e testes de fluxo (front)
 //   valida_teste   → npm test (back)
+//   valida_antigo  → ensaio da migração a partir da estrutura antiga de produção
 // Cada uso tem o seu, para um não apagar os dados do outro.
-const BANCOS_ENSAIO = ['valida_ensaio', 'valida_visual', 'valida_teste']
+const BANCOS_ENSAIO = ['valida_ensaio', 'valida_visual', 'valida_teste', 'valida_antigo']
 const ehEnsaio = (nome) => BANCOS_ENSAIO.includes(nome)
 module.exports = { BANCOS_ENSAIO, ehEnsaio }

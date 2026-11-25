@@ -44,8 +44,11 @@ const CONFERENCIAS = [
                  AND h.hora_abertura ~ '^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$'
                  AND h.hora_fechamento ~ '^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$') x WHERE o <= 3) AS esperado,
             (SELECT COUNT(*) FROM unidade_turnos WHERE ativo) AS obtido`],
-  ['dias fechados',
-    `SELECT (SELECT COUNT(*) FROM loja_fechamentos f JOIN unidades un ON un.id = f.loja_id) AS esperado, (SELECT COUNT(*) FROM dias_fechados) AS obtido`],
+  ['dias fechados (datas válidas, a mesma regra da 026)',
+    `SELECT (SELECT COUNT(*) FROM loja_fechamentos f JOIN unidades un ON un.id = f.loja_id
+               WHERE CASE WHEN f.data ~ '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'
+                          THEN substring(f.data, 9, 2)::int <= extract(day FROM (make_date(substring(f.data, 1, 4)::int, substring(f.data, 6, 2)::int, 1) + interval '1 month - 1 day'))
+                          ELSE false END) AS esperado, (SELECT COUNT(*) FROM dias_fechados) AS obtido`],
   ['pessoas = equipe de empresa válida',
     `SELECT (SELECT COUNT(*) FROM usuarios u WHERE COALESCE(u.perfil, '') <> 'super_admin' AND ${EMPRESA_DA_PESSOA} IS NOT NULL) AS esperado,
             (SELECT COUNT(*) FROM colaboradores) AS obtido`],

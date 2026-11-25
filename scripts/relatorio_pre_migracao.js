@@ -52,10 +52,13 @@ const CELULAR = `NULLIF(regexp_replace(COALESCE(u.whatsapp, ''), '[^0-9]', '', '
 const EH_EQUIPE = `COALESCE(u.perfil, '') <> 'super_admin'`
 
 // Cada consulta: título, tabelas de que depende e SQL que devolve UMA linha
-// só com colunas numéricas.
+// só com colunas numéricas. "depende": números que usam uma coluna criada pelas
+// migrations 001–019. Num banco mais antigo a coluna entra como vazia só na
+// leitura, e o número aparece como "coluna ausente" (os outros saem normalmente).
 const CONSULTAS = [
   {
     titulo: 'Pessoas (usuarios)',
+    depende: { arquivados: 'usuarios.arquivado_em' },
     tabelas: ['usuarios', 'lojas'],
     sql: `SELECT
       COUNT(*) AS total,
@@ -132,6 +135,7 @@ const CONSULTAS = [
   },
   {
     titulo: 'Unidades (lojas): ativo 1 = ativa, 0 = inativa, -1 = arquivada',
+    depende: { arquivadas_sem_data: 'lojas.arquivado_em' },
     tabelas: ['lojas'],
     sql: `SELECT
       COUNT(*) AS total,
@@ -172,15 +176,18 @@ const CONSULTAS = [
   },
   {
     titulo: 'Órfãos: admin_id que não é de nenhum super_admin (ficam só no legado)',
+    depende: { perfis_orfaos: 'perfis.admin_id' },
     tabelas: ['usuarios', 'lojas', 'perfis', 'checklists'],
     sql: `SELECT
       (SELECT COUNT(*) FROM lojas l WHERE NOT EXISTS (SELECT 1 FROM usuarios d WHERE d.id = l.admin_id AND d.perfil = 'super_admin')) AS unidades_orfas,
       (SELECT COUNT(*) FROM perfis p WHERE (p.sistema = 0 OR p.sistema IS NULL) AND NOT EXISTS (SELECT 1 FROM usuarios d WHERE d.id = p.admin_id AND d.perfil = 'super_admin')) AS perfis_orfaos,
       (SELECT COUNT(*) FROM checklists c WHERE NOT EXISTS (SELECT 1 FROM lojas l JOIN usuarios d ON d.id = l.admin_id AND d.perfil = 'super_admin' WHERE l.id = c.loja_id)) AS tarefas_orfas,
-      (SELECT COUNT(*) FROM usuarios u WHERE COALESCE(u.perfil, '') <> 'super_admin' AND NOT EXISTS (SELECT 1 FROM lojas l JOIN usuarios d ON d.id = l.admin_id AND d.perfil = 'super_admin' WHERE l.id = u.loja_id)) AS pessoas_orfas`
+      (SELECT COUNT(*) FROM usuarios u WHERE COALESCE(u.perfil, '') <> 'super_admin' AND NOT EXISTS (SELECT 1 FROM lojas l JOIN usuarios d ON d.id = l.admin_id AND d.perfil = 'super_admin' WHERE l.id = u.loja_id)) AS pessoas_orfas,
+      (SELECT COUNT(*) FROM usuarios u WHERE u.loja_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM lojas l WHERE l.id = u.loja_id)) AS pessoas_de_unidade_que_nao_existe`
   },
   {
     titulo: 'Cargos e perfis (perfis) (D1, D9, D16)',
+    depende: { empresas_com_personalizado: 'perfis.admin_id', personalizados_sem_empresa: 'perfis.admin_id', alcance_todas: 'perfis.escopo', alcance_escolhidas: 'perfis.escopo', alcance_propria: 'perfis.escopo', alcance_outro: 'perfis.escopo' },
     tabelas: ['perfis'],
     sql: `SELECT
       COUNT(*) AS total,
@@ -196,6 +203,7 @@ const CONSULTAS = [
   },
   {
     titulo: 'Maior número de perfis personalizados numa empresa',
+    depende: { maximo: 'perfis.admin_id' },
     tabelas: ['perfis'],
     sql: `SELECT COALESCE(MAX(qtd), 0) AS maximo
     FROM (
@@ -225,6 +233,7 @@ const CONSULTAS = [
   },
   {
     titulo: 'Tarefas (checklists) (D3, D4, D8)',
+    depende: { tipo_lider: 'checklists.tipo', tipo_operador: 'checklists.tipo' },
     tabelas: ['checklists', 'usuarios'],
     sql: `SELECT
       COUNT(*) AS total,
@@ -265,6 +274,7 @@ const CONSULTAS = [
   },
   {
     titulo: 'Execuções antigas (execucoes, ou _legado depois da migração) (D3, D6, D7)',
+    depende: { conferencia_pendente: '{{execucoes}}.status_conferencia', conferencia_aprovada: '{{execucoes}}.status_conferencia', conferencia_reprovada: '{{execucoes}}.status_conferencia' },
     tabelas: ['{{execucoes}}', 'usuarios'],
     sql: `SELECT
       COUNT(*) AS total,
@@ -393,10 +403,22 @@ function nomes(migrado) {
     ? { execucoes: 'execucoes_legado', execucoes_itens: 'execucoes_itens_legado', perfil_permissoes: 'perfil_permissoes_legado' }
     : { execucoes: 'execucoes', execucoes_itens: 'execucoes_itens', perfil_permissoes: 'perfil_permissoes' }
 }
+const TIPO_COLUNA = { arquivado_em: 'timestamp', admin_id: 'integer', escopo: 'text', tipo: 'text', status_conferencia: 'text' }
+// "FROM perfis p" → "FROM (SELECT _t.*, NULL::text AS escopo FROM perfis _t) p".
+function comColunasVazias(sql, ausentes) {
+  const porTabela = {}
+  for (const c of ausentes) { const [t, col] = c.split('.'); (porTabela[t] = porTabela[t] || []).push(col) }
+  for (const [t, cols] of Object.entries(porTabela)) {
+    const extra = [...new Set(cols)].map((c) => `NULL::${TIPO_COLUNA[c] || 'text'} AS ${c}`).join(', ')
+    sql = sql.replace(new RegExp(`\\b(FROM|JOIN)\\s+${t}\\b(\\s+(?!WHERE|LEFT|JOIN|GROUP|ORDER|ON|LIMIT)[a-z]\\w*)?`, 'g'),
+      (_, pre, apelido) => `${pre} (SELECT _t.*, ${extra} FROM ${t} _t)${apelido || ` ${t}`}`)
+  }
+  return sql
+}
 const trocar = (texto, n) => texto.replace(/\{\{(\w+)\}\}/g, (_, k) => n[k])
 function montar(migrado) {
   const n = nomes(migrado)
-  return [...CONSULTAS, ...(migrado ? NOVAS : [])].map((c) => ({ ...c, sql: trocar(c.sql, n), tabelas: c.tabelas.map((t) => trocar(t, n)) }))
+  return [...CONSULTAS, ...(migrado ? NOVAS : [])].map((c) => ({ ...c, sql: trocar(c.sql, n), tabelas: c.tabelas.map((t) => trocar(t, n)), depende: Object.fromEntries(Object.entries(c.depende || {}).map(([k, v]) => [k, trocar(v, n)])) }))
 }
 
 // Tabelas novas que não podem existir ainda (colisão / migração já feita).
@@ -419,7 +441,8 @@ function conferirConsulta(sql) {
 }
 
 const SQL_EXISTE_TABELA = `SELECT to_regclass($1) IS NOT NULL AS existe`
-const todas = [SQL_EXISTE_TABELA, ...montar(false).map((c) => c.sql), ...montar(true).map((c) => c.sql)]
+const SQL_EXISTE_COLUNA = `SELECT COUNT(*) > 0 AS existe FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`
+const todas = [SQL_EXISTE_TABELA, SQL_EXISTE_COLUNA, ...[...montar(false), ...montar(true)].flatMap((c) => [c.sql, comColunasVazias(c.sql, Object.values(c.depende))])]
 for (const sql of todas) {
   const problema = conferirConsulta(sql)
   if (problema) {
@@ -490,12 +513,17 @@ async function main() {
         console.log(`  (pulado: tabela ausente: ${faltando.join(', ')})\n`)
         continue
       }
+      const ausentes = []
+      for (const col of new Set(Object.values(c.depende))) {
+        const r = await client.query(SQL_EXISTE_COLUNA, col.split('.'))
+        if (!r.rows[0].existe) ausentes.push(col)
+      }
       let linha
       try {
-        const r = await client.query(c.sql)
+        const r = await client.query(comColunasVazias(c.sql, ausentes))
         linha = r.rows[0] || {}
       } catch (e) {
-        console.log(`  ${erroSeguro(e)}\n`)
+        console.log(e && e.code === '42703' ? '  (pulado: coluna ausente)\n' : `  ${erroSeguro(e)}\n`)
         continue
       }
       if (!soNumeros(linha)) {
@@ -504,7 +532,7 @@ async function main() {
         return
       }
       for (const [k, v] of Object.entries(linha)) {
-        console.log(`  ${k}: ${v === null ? 0 : v}`)
+        console.log(`  ${k}: ${ausentes.includes(c.depende[k]) ? `coluna ausente (${c.depende[k]})` : v === null ? 0 : v}`)
       }
       console.log('')
     }
