@@ -201,6 +201,13 @@ r.post('/fotos', express.raw({ type: Object.keys(TIPOS), limit: `${config.fotoMa
     fs.writeFileSync(tmp, req.body, { mode: 0o600 })
     fs.renameSync(tmp, absoluto)
   }
+  // Reenvio da mesma foto (a resposta se perdeu sem internet): devolve a que já
+  // está guardada e ainda não foi usada, em vez de criar outra.
+  const ja = await db.um(
+    `SELECT f.id FROM fotos f WHERE f.empresa_id = $1 AND f.sha256 = $2 AND f.criado_por_tipo = $3 AND f.criado_por = $4
+       AND NOT EXISTS (SELECT 1 FROM execucoes e WHERE e.foto_id = f.id) AND NOT EXISTS (SELECT 1 FROM acoes a WHERE a.foto_id = f.id)
+     ORDER BY f.id DESC LIMIT 1`, [req.ator.empresaId, sha, req.ator.tipo, req.ator.id])
+  if (ja) return res.status(200).json({ foto_id: ja.id, tamanho: req.body.length, repetida: true })
   const f = await db.um(
     `INSERT INTO fotos (empresa_id, caminho, tamanho, mime, sha256, criado_por_tipo, criado_por) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
     [req.ator.empresaId, relativo, req.body.length, mime, sha, req.ator.tipo, req.ator.id])
@@ -312,60 +319,108 @@ function csv(linhas, colunas) {
   const esc = (x) => {
     if (x === null || x === undefined) return ''
     const s = x instanceof Date ? x.toISOString() : typeof x === 'object' ? JSON.stringify(x) : String(x)
-    return /[;"\n\r]/.test(s) || /^[=+\-@]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    // Texto que o Excel leria como fórmula (=, +, -, @) ganha apóstrofo: fica texto.
+    const t = typeof x === 'string' && /^[=+\-@\t]/.test(s) ? `'${s}` : s
+    return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t
   }
   return '﻿' + [colunas.join(';'), ...linhas.map((l) => colunas.map((c) => esc(l[c])).join(';'))].join('\r\n')
 }
 
-r.get('/relatorios/exportar', exigir('exp'), async (req, res) => {
-  const conteudo = v.umDe(req.query.conteudo ?? 'execucoes', 'o conteúdo', ['execucoes', 'pessoas', 'tarefas', 'bonus', 'registro'])
-  const formato = v.umDe(req.query.formato ?? 'csv', 'o formato', ['csv', 'xlsx'])
-  if (formato === 'xlsx') throw invalido('Por enquanto a exportação é em CSV (abre no Excel).')
-  const unidadeId = v.inteiro(req.query.unidade_id, 'a unidade', { min: 1 })
-  if (unidadeId) conferirUnidade(req, unidadeId)
-  const unidades = unidadeId ? [unidadeId] : [...req.acesso.unidades]
-  const { de, ate } = periodo(req)
-  let linhas, colunas
+const CONTEUDOS = { execucoes: 'Tarefas', pessoas: 'Pessoas e cargos', tarefas: 'Cadastro de tarefas', bonus: 'Bônus', registro: 'Registro' }
+
+async function linhasExport(req, conteudo, unidades, de, ate) {
   if (conteudo === 'execucoes') {
-    colunas = ['data', 'hora_prevista', 'unidade', 'pessoa', 'tarefa', 'estado', 'feita_em', 'resposta_texto', 'resposta_num', 'fora', 'conferencia']
-    linhas = await db.q(
-      `SELECT e.data, e.hora_prevista, u.nome AS unidade, c.nome AS pessoa, t.titulo AS tarefa, e.estado, e.feita_em, e.resposta_texto,
-              e.resposta_num, e.resposta_fora AS fora, e.conferencia
-       FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id JOIN colaboradores c ON c.id = e.colaborador_id JOIN unidades u ON u.id = e.unidade_id
-       WHERE e.empresa_id = $1 AND e.unidade_id = ANY($2) AND e.data BETWEEN $3 AND $4 ORDER BY e.data, e.hora_prevista`,
-      [req.ator.empresaId, unidades, de, ate])
-  } else if (conteudo === 'pessoas') {
-    colunas = ['nome', 'celular', 'unidade', 'cargo', 'perfil', 'situacao']
-    linhas = await db.q(
-      `SELECT c.nome, c.celular, u.nome AS unidade, cg.nome AS cargo, cg.perfil, c.situacao
-       FROM colaboradores c JOIN unidades u ON u.id = c.unidade_principal_id JOIN cargos cg ON cg.id = c.cargo_id
-       WHERE c.empresa_id = $1 AND c.unidade_principal_id = ANY($2) AND c.excluido_em IS NULL ORDER BY u.nome, c.nome`,
-      [req.ator.empresaId, unidades])
-  } else if (conteudo === 'tarefas') {
-    colunas = ['unidade', 'titulo', 'pessoa_ou_cargo', 'recorrencia', 'hora_ini', 'hora_fim', 'tipo_resposta', 'ativa']
-    linhas = await db.q(
-      `SELECT u.nome AS unidade, t.titulo, COALESCE(c.nome, cg.nome) AS pessoa_ou_cargo, t.recorrencia, t.hora_ini, t.hora_fim, t.tipo_resposta, t.ativa
-       FROM tarefas t JOIN unidades u ON u.id = t.unidade_id LEFT JOIN colaboradores c ON c.id = t.colaborador_id LEFT JOIN cargos cg ON cg.id = t.cargo_id
-       WHERE t.empresa_id = $1 AND t.unidade_id = ANY($2) AND t.arquivado_em IS NULL AND t.pai_id IS NULL ORDER BY u.nome, t.hora_ini`,
-      [req.ator.empresaId, unidades])
-  } else if (conteudo === 'bonus') {
+    return {
+      colunas: ['data', 'hora_prevista', 'unidade', 'pessoa', 'tarefa', 'estado', 'feita_em', 'resposta_texto', 'resposta_num', 'fora', 'conferencia'],
+      linhas: await db.q(
+        `SELECT e.data, e.hora_prevista, u.nome AS unidade, c.nome AS pessoa, t.titulo AS tarefa, e.estado, e.feita_em, e.resposta_texto,
+                e.resposta_num, e.resposta_fora AS fora, e.conferencia
+         FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id JOIN colaboradores c ON c.id = e.colaborador_id JOIN unidades u ON u.id = e.unidade_id
+         WHERE e.empresa_id = $1 AND e.unidade_id = ANY($2) AND e.data BETWEEN $3 AND $4 ORDER BY e.data, e.hora_prevista`,
+        [req.ator.empresaId, unidades, de, ate])
+    }
+  }
+  if (conteudo === 'pessoas') {
+    return {
+      colunas: ['nome', 'celular', 'unidade', 'cargo', 'perfil', 'situacao'],
+      linhas: await db.q(
+        `SELECT c.nome, c.celular, u.nome AS unidade, cg.nome AS cargo, cg.perfil, c.situacao
+         FROM colaboradores c JOIN unidades u ON u.id = c.unidade_principal_id JOIN cargos cg ON cg.id = c.cargo_id
+         WHERE c.empresa_id = $1 AND c.unidade_principal_id = ANY($2) AND c.excluido_em IS NULL ORDER BY u.nome, c.nome`,
+        [req.ator.empresaId, unidades])
+    }
+  }
+  if (conteudo === 'tarefas') {
+    return {
+      colunas: ['unidade', 'titulo', 'pessoa_ou_cargo', 'recorrencia', 'hora_ini', 'hora_fim', 'tipo_resposta', 'ativa'],
+      linhas: await db.q(
+        `SELECT u.nome AS unidade, t.titulo, COALESCE(c.nome, cg.nome) AS pessoa_ou_cargo, t.recorrencia, t.hora_ini, t.hora_fim, t.tipo_resposta, t.ativa
+         FROM tarefas t JOIN unidades u ON u.id = t.unidade_id LEFT JOIN colaboradores c ON c.id = t.colaborador_id LEFT JOIN cargos cg ON cg.id = t.cargo_id
+         WHERE t.empresa_id = $1 AND t.unidade_id = ANY($2) AND t.arquivado_em IS NULL AND t.pai_id IS NULL ORDER BY u.nome, t.hora_ini`,
+        [req.ator.empresaId, unidades])
+    }
+  }
+  if (conteudo === 'bonus') {
     if (!tem(req, 'premio')) throw proibido()
-    colunas = ['pessoa', 'de', 'ate', 'bruto', 'descontos', 'atrasos', 'liquido', 'feitas', 'nao_feitas']
     const ps = await db.q(`SELECT id, nome FROM colaboradores WHERE empresa_id = $1 AND unidade_principal_id = ANY($2) AND excluido_em IS NULL ORDER BY nome`, [req.ator.empresaId, unidades])
-    linhas = []
+    const linhas = []
     for (const p of ps) linhas.push({ pessoa: p.nome, ...(await bonus.calcular(db, p.id, de, ate)) })
-  } else {
-    if (!tem(req, 'log')) throw proibido()
-    colunas = ['em', 'quem_tipo', 'quem_nome', 'acao', 'entidade', 'entidade_id', 'detalhe']
-    linhas = await db.q(
+    return { colunas: ['pessoa', 'de', 'ate', 'bruto', 'descontos', 'atrasos', 'liquido', 'feitas', 'nao_feitas'], linhas }
+  }
+  if (!tem(req, 'log')) throw proibido()
+  return {
+    colunas: ['em', 'quem_tipo', 'quem_nome', 'acao', 'entidade', 'entidade_id', 'detalhe'],
+    linhas: await db.q(
       `SELECT em, quem_tipo, quem_nome, acao, entidade, entidade_id, detalhe FROM registro_atividades
        WHERE empresa_id = $1 AND (unidade_id IS NULL OR unidade_id = ANY($2)) AND (em AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $3 AND $4 ORDER BY em`,
       [req.ator.empresaId, unidades, de, ate])
   }
-  await registrar(db, { empresaId: req.ator.empresaId, unidadeId: unidadeId || null, ator: req.ator, acao: 'dados.exportados', detalhe: { conteudo, de, ate } })
+}
+
+// Planilha .xlsx (exceljs): uma aba por conteúdo. Tudo entra como valor (texto,
+// número ou data), nunca como fórmula.
+async function xlsx(abas) {
+  const ExcelJS = require('exceljs')
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'VALIDA'
+  for (const a of abas) {
+    const ws = wb.addWorksheet(a.nome.slice(0, 31), { views: [{ state: 'frozen', ySplit: 1 }] })
+    ws.columns = a.colunas.map((c) => ({ header: c, key: c, width: Math.max(12, Math.min(40, c.length + 4)) }))
+    ws.getRow(1).font = { bold: true }
+    for (const l of a.linhas) {
+      ws.addRow(a.colunas.map((c) => {
+        const x = l[c]
+        if (x === null || x === undefined) return null
+        // Data e hora de São Paulo (o Excel não tem fuso).
+        if (x instanceof Date) return new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'medium' }).format(x)
+        if (typeof x === 'boolean') return x ? 'sim' : 'não'
+        return typeof x === 'object' ? JSON.stringify(x) : x
+      }))
+    }
+  }
+  return Buffer.from(await wb.xlsx.writeBuffer())
+}
+
+// ?conteudo=execucoes (ou vários, separados por vírgula, só no .xlsx) &formato=csv|xlsx
+r.get('/relatorios/exportar', exigir('exp'), async (req, res) => {
+  const formato = v.umDe(req.query.formato ?? 'csv', 'o formato', ['csv', 'xlsx'])
+  const lista = [...new Set(String(req.query.conteudo ?? 'execucoes').split(','))].map((c) => v.umDe(c, 'o conteúdo', Object.keys(CONTEUDOS), { obrigatorio: true }))
+  if (formato === 'csv' && lista.length > 1) throw invalido('No CSV, exporte um conteúdo por vez.')
+  const unidadeId = v.inteiro(req.query.unidade_id, 'a unidade', { min: 1 })
+  if (unidadeId) conferirUnidade(req, unidadeId)
+  const unidades = unidadeId ? [unidadeId] : [...req.acesso.unidades]
+  const { de, ate } = periodo(req)
+  const abas = []
+  for (const c of lista) abas.push({ nome: CONTEUDOS[c], ...(await linhasExport(req, c, unidades, de, ate)) })
+  await registrar(db, { empresaId: req.ator.empresaId, unidadeId: unidadeId || null, ator: req.ator, acao: 'dados.exportados', detalhe: { conteudo: lista.join(','), formato, de, ate } })
+  const nome = `valida_${lista.length > 1 ? 'dados' : lista[0]}_${de}_${ate}.${formato}`
+  res.setHeader('Content-Disposition', `attachment; filename="${nome}"`)
+  if (formato === 'xlsx') {
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    return res.send(await xlsx(abas))
+  }
   res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-  res.setHeader('Content-Disposition', `attachment; filename="valida_${conteudo}_${de}_${ate}.csv"`)
-  res.send(csv(linhas, colunas))
+  res.send(csv(abas[0].linhas, abas[0].colunas))
 })
 
 module.exports = r

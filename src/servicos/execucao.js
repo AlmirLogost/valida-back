@@ -86,8 +86,11 @@ async function concluir(req, execId, b) {
     if (isNaN(rc)) throw invalido('Relógio do celular inválido.')
     diferenca = Math.round((agora - rc) / 1000)
   }
-  // Horário no relógio do servidor (corrige a diferença do celular), nunca no futuro.
-  let feitaReal = new Date(feitaEm.getTime() + (diferenca || 0) * 1000)
+  // Horário no relógio do servidor: quando o celular diz a hora da conclusão
+  // (fila sem internet), ela é corrigida pela diferença dos relógios e nunca
+  // fica no futuro. Sem feita_em, vale a hora do servidor (o relógio do celular
+  // só serve para marcar a diferença; nunca muda a hora da conclusão).
+  let feitaReal = b.feita_em === undefined || b.feita_em === null ? agora : new Date(feitaEm.getTime() + (diferenca || 0) * 1000)
   if (feitaReal > agora) feitaReal = agora
 
   return db.tx(async (x) => {
@@ -102,6 +105,8 @@ async function concluir(req, execId, b) {
     if (e.colaborador_id !== req.ator.id) throw naoEncontrado()
     const limite = agenda.limiteDe(e, t.pai_id ? await x.um('SELECT nf_min FROM tarefas WHERE id = $1', [t.pai_id]) : t, u.fuso)
 
+    // Dois envios iguais ao mesmo tempo: o segundo esperou a trava da linha.
+    if (chave && e.chave_envio === chave && e.estado !== 'a_fazer') return { status: 200, corpo: { ok: true, duplicado: true, execucao_id: e.id, estado: e.estado } }
     if (e.estado === 'feita' || e.estado === 'na') throw conflito('Essa tarefa já foi feita.')
     if (e.estado === 'dispensada' || e.estado === 'cancelada') throw conflito('Essa tarefa não conta hoje.')
     if (feitaReal > limite) {
@@ -135,7 +140,7 @@ async function concluir(req, execId, b) {
          resposta_fora = $6, foto_id = $7, chave_envio = $8, diferenca_relogio_s = $9, conferencia = NULL,
          conferencia_motivo = NULL, conferida_por = NULL, conferida_por_tipo = NULL, conferida_em = NULL
        WHERE id = $1`,
-      [e.id, resp.na ? 'na' : 'feita', feitaEm, resp.campos.resposta_texto, resp.campos.resposta_num, resp.fora, fotoId, chave, diferenca])
+      [e.id, resp.na ? 'na' : 'feita', feitaReal, resp.campos.resposta_texto, resp.campos.resposta_num, resp.fora, fotoId, chave, diferenca])
     if (eraNaoFeita) {
       await x.exec(
         `UPDATE acoes SET estado = 'resolvida', solucao = 'Concluída sem internet antes do prazo (envio atrasado).', resolvida_em = now()

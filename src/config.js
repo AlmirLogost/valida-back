@@ -33,5 +33,12 @@ module.exports = {
   fotoMaxMb: Number(process.env.FOTO_MAX_MB) || 5,
   // Envio offline: diferença de relógio acima disso fica marcada para o gerente.
   relogioAlertaS: 300,
-  versaoMinimaBanco: 44
+  // Web Push (§18): chaves VAPID só no .env (scripts/gerar_vapid.js). Sem elas,
+  // o push fica desligado e o resto funciona igual.
+  vapid: {
+    publica: process.env.VAPID_PUBLIC_KEY || '',
+    privada: process.env.VAPID_PRIVATE_KEY || '',
+    contato: process.env.VAPID_SUBJECT || 'https://example.com'
+  },
+  versaoMinimaBanco: 45
 }

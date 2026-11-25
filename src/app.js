@@ -32,6 +32,7 @@ function criarApp() {
   v2.use(require('./rotas/equipe'))
   v2.use(require('./rotas/execucao'))
   v2.use(require('./rotas/conta'))
+  v2.use(require('./rotas/push'))
   v2.use((req, res) => res.status(404).json({ erro: 'Não encontrado.' }))
   app.use('/api/v2', v2)
 
@@ -41,7 +42,11 @@ function criarApp() {
   // Front compilado.
   const dist = path.join(__dirname, '..', '..', 'front', 'dist')
   app.use(express.static(dist, {
-    setHeaders: (res, p) => { if (p.endsWith('.html')) res.setHeader('Cache-Control', 'no-store') }
+    setHeaders: (res, p) => {
+      if (p.endsWith('.html')) res.setHeader('Cache-Control', 'no-store')
+      // O service worker e o manifest precisam ser conferidos sempre (atualização do app).
+      if (p.endsWith('sw.js') || p.endsWith('.webmanifest')) res.setHeader('Cache-Control', 'no-cache')
+    }
   }))
   app.get('/{*splat}', (req, res, next) => res.sendFile(path.join(dist, 'index.html'), (e) => e && next()))
 

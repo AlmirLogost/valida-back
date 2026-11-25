@@ -231,4 +231,4 @@ async function rodada(agora = tempo.agora()) {
   }
 }
 
-module.exports = { tarefaValeNoDia, gerarDia, acertarEstados, vencer, avisarVencidas, processarUnidade, rodada, limiteDe, prazoDaAcao, criarAcao, marcarNaoFeita, MOTIVOS_SISTEMA }
+module.exports = { tarefaValeNoDia, gerarDia, acertarEstados, vencer, avisarVencidas, processarUnidade, rodada, limiteDe, prazoDaAcao, responsavel, criarAcao, marcarNaoFeita, MOTIVOS_SISTEMA }

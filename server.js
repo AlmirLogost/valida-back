@@ -30,7 +30,8 @@ async function iniciar() {
   })
   // Agendador: a cada minuto (com trava no banco: nunca roda duas vezes ao mesmo tempo).
   const agenda = require('./src/servicos/agenda')
-  const rodar = () => agenda.rodada().catch((e) => console.error(`[agendador] código ${e.code || '-'}`))
+  const notificacoes = require('./src/servicos/notificacoes')
+  const rodar = () => agenda.rodada().then(() => notificacoes.rodada()).catch((e) => console.error(`[agendador] código ${e.code || '-'}`))
   setTimeout(rodar, 5000)
   setInterval(rodar, 60000)
 }
