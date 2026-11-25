@@ -248,6 +248,25 @@ for x in BACK FRONT; do
   else echo "$x: nada a guardar"; fi
   [ -z "$(git -C "$r" status --porcelain -uno)" ] || parar "sobraram mudanças locais em $r."
 done
+# Arquivos não versionados (e não ignorados): o checkout falharia se o código novo
+# tiver um com o mesmo nome. Vão para $G/soltos_*, com o caminho; a volta devolve.
+# Nunca o .env; node_modules e dist têm tratamento próprio logo abaixo.
+soltos() { git -C "$1" ls-files -z --others --exclude-standard -x node_modules -x dist -x .env -x '.env.*'; }
+for x in back front; do
+  if [ "$x" = back ]; then r="$B"; else r="$F"; fi
+  soltos "$r" > "$T/soltos_$x.z"
+  if [ -s "$T/soltos_$x.z" ]; then
+    cat "$T/soltos_$x.z" >> "$G/soltos_$x.lista"
+    if [ "$x" = back ]; then guardar_estado SOLTOS_BACK "$G/soltos_back"; else guardar_estado SOLTOS_FRONT "$G/soltos_front"; fi
+    while IFS= read -r -d '' a <&3; do
+      a="${a%/}"; d="$G/soltos_$x/$a"
+      if [ -e "$d" ] || [ -L "$d" ]; then parar "já existe um $a guardado de antes em $G/soltos_$x. Veja à mão."; fi
+      mkdir -p "$(dirname "$d")"; mv "$r/$a" "$d"; echo "$x: guardei $a"
+    done 3< "$T/soltos_$x.z"
+    soltos "$r" > "$T/soltos_$x.z"
+    if [ -s "$T/soltos_$x.z" ]; then parar "sobraram arquivos soltos em $r."; fi
+  else echo "$x: nenhum arquivo solto"; fi
+done
 [ -f "$B/.env" ] || parar "o .env sumiu."
 if [ -e "$G/dist" ]; then :; elif [ -d "$F/dist" ]; then cp -a "$F/dist" "$G/dist_parcial"; mv "$G/dist_parcial" "$G/dist"; fi
 

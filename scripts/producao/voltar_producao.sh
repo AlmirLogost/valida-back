@@ -22,7 +22,7 @@ pm2info() { pm2 jlist 2>/dev/null | node "$FE/pm2info.cjs" "$B/.env" "$1"; }
 cabeca() { git -C "$1" rev-parse HEAD; }
 unset DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD DB_SSL PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE PGSERVICE NODE_OPTIONS NODE_ENV FOTOS_DIR APP_BASE PILOTO FRONT_DIST FRONTEND_URL PORT || true
 [ -s "$T/estado.sh" ] && [ -d "$FE/node_modules" ] || parar "não achei o estado da atualização em $T (a fase A não terminou: não há o que voltar)."
-BACK_ANTES=""; FRONT_ANTES=""; STASH_BACK=""; STASH_FRONT=""; DUMP_A=""; DUMP_FINAL=""; ENV_ANTES=""; NGINX_ANTES=""; PORTA=3001
+BACK_ANTES=""; FRONT_ANTES=""; STASH_BACK=""; STASH_FRONT=""; SOLTOS_BACK=""; SOLTOS_FRONT=""; DUMP_A=""; DUMP_FINAL=""; ENV_ANTES=""; NGINX_ANTES=""; PORTA=3001
 . "$T/estado.sh"
 DUMP="${DUMP_FINAL:-$DUMP_A}"
 
@@ -68,6 +68,22 @@ if [ "$(cabeca "$B")" = "$BACK_ANTES" ]; then :; else git -C "$B" checkout -q --
 if [ "$(cabeca "$F")" = "$FRONT_ANTES" ]; then :; else git -C "$F" checkout -q --detach "$FRONT_ANTES"; fi
 if [ -n "$STASH_BACK" ] && [ -z "$(git -C "$B" status --porcelain -uno)" ]; then git -C "$B" stash apply -q "$STASH_BACK"; fi
 if [ -n "$STASH_FRONT" ] && [ -z "$(git -C "$F" status --porcelain -uno)" ]; then git -C "$F" stash apply -q "$STASH_FRONT"; fi
+# Arquivos soltos guardados na fase B4. Se o piloto criou um com o mesmo nome, o
+# dele vai para o lado (nada é apagado).
+devolver() {
+  local a o l="$1.lista"
+  while IFS= read -r -d '' a <&3; do
+    a="${a%/}"; o="$1/$a"
+    if [ -e "$o" ] || [ -L "$o" ]; then
+      if [ -e "$2/$a" ] || [ -L "$2/$a" ]; then mkdir -p "$(dirname "$T/soltos_do_piloto_$TS/$3/$a")"; mv "$2/$a" "$T/soltos_do_piloto_$TS/$3/$a"; fi
+      mkdir -p "$(dirname "$2/$a")"; mv "$o" "$2/$a"; echo "$3: devolvi $a"
+    fi
+  done 3< "$l"
+  mv "$l" "$l.devolvida_$TS"
+}
+TS="$(agora)"
+if [ -n "$SOLTOS_BACK" ] && [ -e "$SOLTOS_BACK.lista" ]; then devolver "$SOLTOS_BACK" "$B" back; fi
+if [ -n "$SOLTOS_FRONT" ] && [ -e "$SOLTOS_FRONT.lista" ]; then devolver "$SOLTOS_FRONT" "$F" front; fi
 marcar codigo
 fi
 
