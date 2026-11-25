@@ -8,13 +8,27 @@ function obrigatoria(nome) {
   return v
 }
 
+// Caminho em que o app é publicado. "/" (padrão) = na raiz; "/valida/" = dentro
+// de um endereço dividido com outros sistemas. Precisa ser o MESMO usado no
+// build do front (APP_BASE na hora do npm run build).
+function caminhoBase(v) {
+  const s = '/' + String(v || '').trim().replace(/^\/+|\/+$/g, '')
+  const b = s === '/' ? '/' : s + '/'
+  if (!/^\/([A-Za-z0-9_-]+\/)*$/.test(b)) throw new Error('APP_BASE inválido: use algo como /valida/.')
+  return b
+}
+
 module.exports = {
   obrigatoria,
+  caminhoBase,
+  appBase: caminhoBase(process.env.APP_BASE),
+  // Pasta do front compilado (os testes usam uma temporária).
+  frontDist: process.env.FRONT_DIST || path.join(__dirname, '..', '..', 'front', 'dist'),
   porta: parseInt(process.env.PORT) || 3001,
   jwtSegredo: () => obrigatoria('JWT_SECRET'),
   // Chave para cifrar o PIN que fica guardado até quem pediu ver uma vez (pedido "pin"/"cad").
   pinCifraChave: () => obrigatoria('PIN_CIFRA_CHAVE'),
-  // CORS: só a origem do front. Vazio = só a mesma origem (o back serve o front).
+  // CORS: só a origem do front, sem caminho (https://endereco). Vazio = só a mesma origem (o back serve o front).
   frontendUrl: process.env.FRONTEND_URL || '',
   // Demonstração na rede local (celular no mesmo Wi-Fi). Só vale com DEMO_REDE=1
   // E no banco de ensaio: nunca em produção.

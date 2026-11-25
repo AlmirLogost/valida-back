@@ -39,6 +39,7 @@ const env = {
   ENVIO_SIMULADO_ARQUIVO: '',
   FRONTEND_URL: 'http://front.teste',
   WEBHOOK_ASAAS_ATIVO: 'false',
+  APP_BASE: process.env.APP_BASE || '/',   // rode também com APP_BASE=/valida/
   VAPID_PUBLIC_KEY: '', VAPID_PRIVATE_KEY: '',   // nos testes nada sai para o push real
   // Fotos dos testes numa pasta temporária (nunca em FOTOS-VALIDA/) e limite menor.
   FOTOS_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'valida-fotos-teste-')),
@@ -56,5 +57,6 @@ function rodar(args, { silencioso = false } = {}) {
 console.log(`Ensaio a partir de ${path.basename(dump)}`)
 rodar(['scripts/ensaio_db.js', 'copiar', dump], { silencioso: true })
 rodar(['scripts/migrar.js'], { silencioso: true })
+console.log(`Caminho do app: ${env.APP_BASE}`)
 console.log('Ensaio pronto (migrations aplicadas). Rodando os testes…\n')
 rodar(['--test', '--test-concurrency=1', 'test/*.test.js'])

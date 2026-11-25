@@ -294,10 +294,10 @@ r.post('/auth/admin/esqueci', async (req, res) => {
     await db.exec(
       `INSERT INTO senha_tokens (admin_id, token_hash, expira_em) VALUES ($1, $2, now() + make_interval(mins => $3))`,
       [a.id, sha256(token), config.senhaTokenMin])
-    const base = config.frontendUrl || ''
+    const base = config.frontendUrl.replace(/\/+$/, '') + config.appBase
     await enviar({
       canal: 'email', destino: a.email, assunto: 'Redefinir sua senha do VALIDA',
-      texto: `Olá, ${a.nome}. Para criar uma senha nova, abra: ${base}/redefinir-senha?token=${token} (vale ${config.senhaTokenMin} minutos).`
+      texto: `Olá, ${a.nome}. Para criar uma senha nova, abra: ${base}redefinir-senha?token=${token} (vale ${config.senhaTokenMin} minutos).`
     })
     await registrar(db, { empresaId: a.empresa_id, ator: { tipo: 'admin', id: a.id, nome: a.nome }, acao: 'senha.pedido_redefinicao' })
   }

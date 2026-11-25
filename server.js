@@ -1,5 +1,7 @@
 // VALIDA · servidor (Etapa 1: só as tabelas novas).
 // O código antigo está em src/legado (não é carregado).
+const fs = require('fs')
+const path = require('path')
 const config = require('./src/config')
 
 for (const nome of ['JWT_SECRET', 'PIN_CIFRA_CHAVE']) {
@@ -21,11 +23,16 @@ async function iniciar() {
     console.error(`❌ O banco está na migration ${versao}; o servidor precisa da ${config.versaoMinimaBanco}. Rode: node scripts/migrar.js --status`)
     process.exit(1)
   }
+  // O front compilado precisa ter sido feito para o mesmo caminho do servidor.
+  try {
+    const m = fs.readFileSync(path.join(config.frontDist, 'index.html'), 'utf8').match(/(?:src|href)="([^"]*)assets\//)
+    if (m && m[1] !== config.appBase) console.error(`⚠️  O front foi compilado para "${m[1]}" e o servidor está em "${config.appBase}" (APP_BASE). O app vai abrir em branco: refaça o build com o mesmo APP_BASE.`)
+  } catch { /* sem front compilado */ }
   criarApp().listen(config.porta, '0.0.0.0', () => {
     console.log(`🚀 VALIDA na porta ${config.porta}`)
     if (config.demoRede) {
       const ips = Object.values(require('os').networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i.address)
-      for (const ip of ips) console.log(`📱 Demonstração na rede local: http://${ip}:${config.porta}`)
+      for (const ip of ips) console.log(`📱 Demonstração na rede local: http://${ip}:${config.porta}${config.appBase.slice(0, -1)}`)
     }
   })
   // Agendador: a cada minuto (com trava no banco: nunca roda duas vezes ao mesmo tempo).

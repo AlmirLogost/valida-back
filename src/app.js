@@ -23,6 +23,17 @@ function criarApp() {
   // Segurança item 5: corpo pequeno (fotos vêm por upload de arquivo na Etapa 1B).
   app.use(express.json({ limit: '100kb' }))
 
+  // Tudo fica embaixo de APP_BASE ("" na raiz, "/valida" no endereço dividido).
+  const raiz = config.appBase.slice(0, -1)
+  if (raiz) {
+    // "/valida" sem a barra ficaria fora do escopo do service worker.
+    app.use((req, res, next) => {
+      if (req.path !== raiz || !['GET', 'HEAD'].includes(req.method)) return next()
+      const i = req.originalUrl.indexOf('?')
+      res.redirect(301, config.appBase + (i < 0 ? '' : req.originalUrl.slice(i)))
+    })
+  }
+
   // API nova.
   const v2 = express.Router()
   v2.use(require('./rotas/auth'))
@@ -34,21 +45,22 @@ function criarApp() {
   v2.use(require('./rotas/conta'))
   v2.use(require('./rotas/push'))
   v2.use((req, res) => res.status(404).json({ erro: 'Não encontrado.' }))
-  app.use('/api/v2', v2)
+  app.use(raiz + '/api/v2', v2)
 
   // Rotas antigas (transição).
-  app.use('/api', require('./rotas/compat')(v2))
+  app.use(raiz + '/api', require('./rotas/compat')(v2))
 
   // Front compilado.
-  const dist = path.join(__dirname, '..', '..', 'front', 'dist')
-  app.use(express.static(dist, {
+  const dist = config.frontDist
+  app.use(config.appBase, express.static(dist, {
     setHeaders: (res, p) => {
       if (p.endsWith('.html')) res.setHeader('Cache-Control', 'no-store')
       // O service worker e o manifest precisam ser conferidos sempre (atualização do app).
       if (p.endsWith('sw.js') || p.endsWith('.webmanifest')) res.setHeader('Cache-Control', 'no-cache')
     }
   }))
-  app.get('/{*splat}', (req, res, next) => res.sendFile(path.join(dist, 'index.html'), (e) => e && next()))
+  app.get(raiz + '/{*splat}', (req, res, next) => res.sendFile(path.join(dist, 'index.html'), (e) => e && next()))
+  if (raiz) app.use((req, res) => res.status(404).json({ erro: 'Não encontrado.' }))
 
   // Erros: mensagem em português; nada de dados internos para fora.
   // eslint-disable-next-line no-unused-vars

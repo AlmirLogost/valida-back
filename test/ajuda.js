@@ -9,6 +9,7 @@ if (process.env.DB_NAME !== 'valida_teste') {
 }
 
 const db = require('../src/db')
+const config = require('../src/config')
 const { criarApp } = require('../src/app')
 const { hashSenha } = require('../src/lib/segredos')
 const { garantirPerfisFixos } = require('../src/servicos/padroes')
@@ -17,7 +18,7 @@ let servidor, base
 
 async function subir() {
   await new Promise((ok) => { servidor = criarApp().listen(0, '127.0.0.1', ok) })
-  base = `http://127.0.0.1:${servidor.address().port}`
+  base = `http://127.0.0.1:${servidor.address().port}${config.appBase.slice(0, -1)}`
 }
 
 async function descer() {
