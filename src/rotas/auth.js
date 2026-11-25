@@ -354,7 +354,8 @@ r.get('/eu', autenticar, async (req, res) => {
   // Colaborador: cargo e unidade principal (Início do gerente, §3).
   const eu = req.ator.tipo === 'colaborador' ? await db.um(
     `SELECT cg.nome AS cargo, c.unidade_principal_id, COALESCE(c.perfil_acesso_id, cg.perfil_acesso_id) AS perfil_acesso_id,
-            (SELECT nome FROM perfis_acesso WHERE id = COALESCE(c.perfil_acesso_id, cg.perfil_acesso_id)) AS perfil_acesso_nome
+            (SELECT nome FROM perfis_acesso WHERE id = COALESCE(c.perfil_acesso_id, cg.perfil_acesso_id)) AS perfil_acesso_nome,
+            (SELECT CASE WHEN ${agenda.EH_GERENTE} THEN c.resumo_whatsapp END FROM perfis_acesso pa WHERE pa.id = COALESCE(c.perfil_acesso_id, cg.perfil_acesso_id)) AS recebe_resumo
      FROM colaboradores c JOIN cargos cg ON cg.id = c.cargo_id WHERE c.id = $1`, [req.ator.id]) : null
   // Alerta "Hora da tarefa" (§13, §18): configuração da unidade principal.
   if (eu) {
@@ -371,6 +372,8 @@ r.get('/eu', autenticar, async (req, res) => {
     perfil: req.acesso.admin ? 'admin' : req.acesso.perfilCargo,
     permissoes: [...req.acesso.chaves].sort(),
     unidades: [...req.acesso.unidades],
+    // Resumo das 22 h (§18): null = não é admin nem gerente.
+    recebe_resumo: req.ator.tipo === 'admin' ? (await db.um('SELECT resumo_whatsapp FROM admins WHERE id = $1', [req.ator.id])).resumo_whatsapp : null,
     ...(eu || {})
   })
 })

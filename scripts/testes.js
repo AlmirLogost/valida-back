@@ -39,6 +39,7 @@ const env = {
   ENVIO_SIMULADO_ARQUIVO: '',
   FRONTEND_URL: 'http://front.teste',
   WEBHOOK_ASAAS_ATIVO: 'false',
+  VAPID_PUBLIC_KEY: '', VAPID_PRIVATE_KEY: '',   // nos testes nada sai para o push real
   // Fotos dos testes numa pasta temporária (nunca em FOTOS-VALIDA/) e limite menor.
   FOTOS_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'valida-fotos-teste-')),
   FOTO_MAX_MB: '1'

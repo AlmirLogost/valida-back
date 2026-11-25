@@ -186,6 +186,7 @@ test('envio sem internet: o duplicado não duplica; feita antes do limite vale m
   const r1 = await h.api(S.o.token).post(`/execucoes/${e.id}/concluir`, corpo)
   assert.equal(r1.status, 200, JSON.stringify(r1.corpo))
   assert.equal(r1.corpo.relogio_suspeito, true, 'diferença de 10 min fica marcada')
+  assert.equal(r1.corpo.conferir_horario, true, 'decisão 2 (Etapa 4): e entra para conferir o horário')
   const r2 = await h.api(S.o.token).post(`/execucoes/${e.id}/concluir`, corpo)
   assert.equal(r2.status, 200)
   assert.equal(r2.corpo.duplicado, true)
@@ -194,9 +195,15 @@ test('envio sem internet: o duplicado não duplica; feita antes do limite vale m
   const outra = await execucaoDeHoje(S.o, await tarefa(S.E.token, { titulo: 'Outra', unidade_id: S.u1.id, colaborador_id: S.o.id, hora_ini: '23:54' }))
   assert.equal((await h.api(S.o.token).post(`/execucoes/${outra.id}/concluir`, corpo)).status, 409, 'a mesma chave em outra tarefa')
 
-  // A de ontem venceu às 09:00, mas foi feita às 08:30 sem internet: vale e fecha a ação.
-  const r3 = await h.api(S.o.token).post(`/execucoes/${S.execOntem.id}/concluir`, { chave_envio: `k-ontem-${S.execOntem.id}`, feita_em: em(S.ontem, '08:30').toISOString() })
+  // A de ontem venceu às 09:00, mas foi feita às 08:30 sem internet. Chegou mais de
+  // 12 h depois (decisão 2 da Etapa 4): feita, com a ação aberta até o gerente aprovar.
+  const r3 = await h.api(S.o.token).post(`/execucoes/${S.execOntem.id}/concluir`, { chave_envio: `k-ontem-${S.execOntem.id}`, feita_em: em(S.ontem, '08:30').toISOString(), relogio_celular: new Date().toISOString() })
   assert.equal(r3.status, 200, JSON.stringify(r3.corpo))
+  if (Date.now() - em(S.ontem, '08:30') > 12 * 3600e3) {
+    assert.equal(r3.corpo.conferir_horario, true)
+    assert.equal((await h.db.um(`SELECT estado FROM acoes WHERE execucao_id = $1 AND tipo = 'nf'`, [S.execOntem.id])).estado, 'aberta')
+    assert.equal((await h.api(S.g.token).post(`/execucoes/${S.execOntem.id}/conferir`, { decisao: 'aprovar' })).status, 200)
+  }
   assert.equal((await h.db.um(`SELECT estado FROM acoes WHERE execucao_id = $1 AND tipo = 'nf'`, [S.execOntem.id])).estado, 'resolvida')
 })
 

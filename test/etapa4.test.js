@@ -202,15 +202,96 @@ test('agendamento: tarefa feita, push desligado e servidor parado não geram avi
   assert.equal((await rodar(dia2, '11:00')).length, 0)
 })
 
-test('resumo das 22 h: só na caixa simulada, só o pendente, uma vez', async () => {
-  const dia = tempo.somarDias(S.hoje, 5)
+test('resumo das 22 h: admin e gerente, cada um só das suas unidades, uma vez, e cada um desliga o seu', async () => {
+  const u2 = await h.criarUnidade(S.E.token, 'U4 dois', -27.1, -52.6)
+  const g2 = await h.criarPessoa(S.E.token, u2.id, 'Gerente', 'Guto Dois')
+  const o2 = await h.criarPessoa(S.E.token, u2.id, 'Operador', 'Otto Dois')
+  g2.token = (await h.entrar(g2)).corpo.token
+  for (const u of [S.u, u2]) await h.api(S.E.token).put(`/unidades/${u.id}/notificacoes`, { resumo_whatsapp: true })
   await h.db.exec(`UPDATE admins SET celular = '49999990001' WHERE id = $1`, [S.E.adminId])
-  await h.api(S.E.token).put(`/unidades/${S.u.id}/notificacoes`, { resumo_whatsapp: true })
-  const antes = caixa.length
-  const u = await un()
-  assert.equal(await notificacoes.resumoUnidade(u, em(dia, '21:59')), 0)
-  assert.equal(await notificacoes.resumoUnidade(u, em(dia, '22:00')), 1)
-  assert.equal(await notificacoes.resumoUnidade(u, em(dia, '22:01')), 0)
-  const m = caixa.slice(antes).filter((x) => x.canal === 'whatsapp')
-  assert.equal(m.length, 1); assert.match(m[0].texto, /Tarefa B/); assert.ok(!m[0].texto.includes('Tarefa A'))
+  assert.equal((await h.api(S.E.token).post('/tarefas', { titulo: 'Só da dois', unidade_id: u2.id, colaborador_id: o2.id, hora_ini: '08:00', recorrencia: 'diario' })).status, 200)
+  const dia = tempo.somarDias(S.hoje, 5), dia2 = tempo.somarDias(S.hoje, 6)
+  for (const d of [dia, dia2]) for (const u of [S.u, u2]) await h.db.tx((x) => agenda.processarUnidade(x, u.id, em(d, '06:00')))
+  const rodar22 = async (d, hm) => { const a = caixa.length; const n = await notificacoes.resumos(em(d, hm), S.E.id); return { n, l: caixa.slice(a).filter((x) => x.canal === 'whatsapp') } }
+  assert.equal((await rodar22(dia, '21:59')).n, 0)
+  const r = await rodar22(dia, '22:00')
+  const de = (cel) => r.l.filter((x) => x.destino === cel)
+  assert.equal(r.n, 3)
+  assert.equal(de('49999990001').length, 1, 'admin: uma mensagem só')
+  assert.match(de('49999990001')[0].texto, /Tarefa B/); assert.match(de('49999990001')[0].texto, /Só da dois/)
+  assert.match(de(S.g.celular)[0].texto, /Tarefa B/); assert.ok(!de(S.g.celular)[0].texto.includes('Só da dois'), 'gerente só vê a unidade dele')
+  assert.ok(!de(g2.celular)[0].texto.includes('Tarefa B')); assert.match(de(g2.celular)[0].texto, /Só da dois/)
+  assert.ok(!r.l.some((x) => x.texto.includes('Tarefa A')), 'a feita não entra')
+  assert.equal((await rodar22(dia, '22:01')).n, 0, 'uma vez')
+  // cada um desliga o seu; operador não tem essa opção
+  assert.equal((await h.api(S.g.token).get('/eu')).corpo.recebe_resumo, true)
+  assert.equal((await h.api(S.g.token).put('/meu-resumo', { receber: false })).status, 200)
+  assert.equal((await h.api(S.g.token).get('/eu')).corpo.recebe_resumo, false)
+  assert.equal((await h.api(S.E.token).put('/meu-resumo', { receber: false })).status, 200)
+  assert.equal((await h.api(S.o.token).put('/meu-resumo', { receber: true })).status, 403)
+  assert.equal((await h.api(S.o.token).get('/eu')).corpo.recebe_resumo, null)
+  const s2 = await rodar22(dia2, '22:00')
+  assert.deepEqual(s2.l.map((x) => x.destino), [g2.celular])
+})
+
+// ---- decisão 2: conclusão sem internet e "conferir horário" ------------------
+async function deOntem(titulo, campos = {}) {
+  const t = await tarefa({ titulo, hora_ini: '08:00', ...campos })
+  await h.db.tx((x) => agenda.processarUnidade(x, S.u.id, em(S.ontem, '07:00')))
+  return execDe(t, S.ontem)
+}
+// Envio da fila: feito há `min` minutos, com o relógio do celular adiantado `dif` segundos.
+// (O horário da tarefa passa a ser o da conclusão, para o teste valer a qualquer hora do dia.)
+async function enviarFila(e, min, dif = 0) {
+  const quando = new Date(Date.now() - min * 60000)
+  await h.db.exec(`UPDATE execucoes SET data = $2, hora_prevista = $3 WHERE id = $1`, [e.id, tempo.hoje(FUSO, quando), tempo.horaAgora(FUSO, quando)])
+  const cel = Date.now() + dif * 1000
+  return h.api(S.o.token).post(`/execucoes/${e.id}/concluir`, { chave_envio: crypto.randomUUID(), feita_em: new Date(cel - min * 60000).toISOString(), relogio_celular: new Date(cel).toISOString() })
+}
+const bonusDe = async () => (await h.api(S.o.token).get(`/bonus/colaboradores/${S.o.id}?de=${tempo.somarDias(S.hoje, -3)}&ate=${S.hoje}`)).corpo
+
+test('sem internet: até 12 h e relógio próximo vale; acima, ou relógio diferente, entra para conferir', async () => {
+  assert.equal((await h.api(S.E.token).put(`/colaboradores/${S.o.id}/regra-bonus`, { regra: { tipo: 'tarefa', valor_feita: 5, valor_nao_feita: 1 } })).status, 200)
+  await h.db.exec(`UPDATE regras_bonus SET vigente_desde = $2 WHERE colaborador_id = $1 AND tipo = 'tarefa'`, [S.o.id, tempo.somarDias(S.hoje, -4)])
+  for (const [min, dif, marca, porque] of [[11 * 60 + 58, 0, false, '11 h 58'], [12 * 60 + 2, 0, true, '12 h 02'], [30, 290, false, 'relógio 4 min 50'], [30, 310, true, 'relógio 5 min 10 adiantado'], [30, -310, true, 'relógio atrasado']]) {
+    const r = await enviarFila(await deOntem(`Fila ${porque}`), min, dif)
+    assert.equal(r.status, 200, porque + JSON.stringify(r.corpo)); assert.equal(r.corpo.estado, 'feita', porque); assert.equal(r.corpo.conferir_horario, marca, porque)
+  }
+  // sem dizer o relógio não dá para conferir: marca. E sem feita_em (com internet) nunca marca.
+  const e = await deOntem('Sem relógio')
+  await h.db.exec(`UPDATE execucoes SET data = $2, hora_prevista = '23:59' WHERE id = $1`, [e.id, S.hoje])
+  assert.equal((await h.api(S.o.token).post(`/execucoes/${e.id}/concluir`, { feita_em: new Date(Date.now() - 60000).toISOString() })).corpo.conferir_horario, true)
+  const e2 = await deOntem('Com internet')
+  await h.db.exec(`UPDATE execucoes SET data = $2, hora_prevista = '23:59' WHERE id = $1`, [e2.id, S.hoje])
+  assert.equal((await h.api(S.o.token).post(`/execucoes/${e2.id}/concluir`, { relogio_celular: new Date(Date.now() + 9e6).toISOString() })).corpo.conferir_horario, false)
+})
+
+test('conferir horário: fora do bônus e do prazo até aprovar; reabrir devolve; só quem confere, e nunca a própria', async () => {
+  const e = await deOntem('Horário a conferir')
+  const antes = await bonusDe()
+  assert.equal((await enviarFila(e, 13 * 60)).corpo.conferir_horario, true)
+  const pend = await bonusDe()
+  assert.equal(pend.bruto, antes.bruto, 'não soma'); assert.equal(pend.descontos, antes.descontos, 'nem desconta'); assert.equal(pend.a_conferir, antes.a_conferir + 5)
+  const d = (await h.db.um('SELECT data::text AS d FROM execucoes WHERE id = $1', [e.id])).d
+  const rel = async () => (await h.api(S.E.token).get(`/relatorios?unidade_id=${S.u.id}&de=${d}&ate=${d}&itens=1`)).corpo.itens.find((x) => x.id === e.id)
+  assert.equal((await rel()).atrasada, true, 'não conta no prazo')
+  // aparece para o gerente (de qualquer dia), não para o operador nem para outra empresa
+  const lista = (await h.api(S.g.token).get(`/execucoes/horarios?unidade_id=${S.u.id}`)).corpo
+  assert.ok(lista.some((x) => x.id === e.id && x.horario_conferir === 'tarde'))
+  assert.equal((await h.api(S.o.token).get('/execucoes/horarios')).status, 403)
+  assert.ok(!(await h.api(S.B.token).get('/execucoes/horarios')).corpo.some((x) => x.id === e.id))
+  assert.equal((await h.api(S.B.token).get(`/execucoes/horarios?unidade_id=${S.u.id}`)).status, 404)
+  assert.equal((await h.api(S.o.token).post(`/execucoes/${e.id}/conferir`, { decisao: 'aprovar' })).status, 403)
+  // aprovar: conta
+  assert.equal((await h.api(S.g.token).post(`/execucoes/${e.id}/conferir`, { decisao: 'aprovar' })).status, 200)
+  const ok = await bonusDe()
+  assert.equal(ok.bruto, antes.bruto + 5); assert.equal(ok.a_conferir, antes.a_conferir)
+  assert.ok(!(await h.api(S.g.token).get('/execucoes/horarios')).corpo.some((x) => x.id === e.id))
+  // reabrir outra: depois do limite vira não feita e desconta
+  const e2 = await deOntem('Horário recusado')
+  await enviarFila(e2, 13 * 60)
+  await h.db.exec('UPDATE tarefas SET nf_min = 60 WHERE id = $1', [e2.tarefa_id])
+  const r = await h.api(S.g.token).post(`/execucoes/${e2.id}/conferir`, { decisao: 'reabrir', motivo: 'Não estava na loja' })
+  assert.equal(r.corpo.estado, 'nao_feita')
+  assert.equal((await bonusDe()).descontos, ok.descontos + 1)
 })

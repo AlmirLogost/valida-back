@@ -7,7 +7,8 @@ const v = require('../lib/validar')
 const buscar = require('../servicos/buscar')
 const { registrar } = require('../lib/registro')
 const { soAdmin, conferirUnidade } = require('../auth/sessao')
-const { invalido, conflito, naoEncontrado } = require('../lib/erros')
+const { EH_GERENTE } = require('../servicos/agenda')
+const { invalido, conflito, naoEncontrado, proibido } = require('../lib/erros')
 
 const r = express.Router()
 
@@ -153,6 +154,19 @@ r.put('/unidades/:id/notificacoes', soAdmin, async (req, res) => {
     await registrar(t, { empresaId: req.ator.empresaId, unidadeId: u.id, ator: req.ator, acao: 'notificacoes.editadas', entidade: 'unidade', entidadeId: u.id, detalhe: d })
   })
   res.json(await db.um(`SELECT ${CAMPOS_NOT} FROM config_notificacoes WHERE unidade_id = $1`, [u.id]))
+})
+
+// Meu resumo das 22 h: cada admin e cada gerente liga ou desliga o seu.
+r.put('/meu-resumo', async (req, res) => {
+  const receber = v.bool(req.body.receber, 'receber', { obrigatorio: true })
+  if (req.ator.tipo === 'admin') await db.exec('UPDATE admins SET resumo_whatsapp = $2 WHERE id = $1', [req.ator.id, receber])
+  else {
+    const n = await db.exec(
+      `UPDATE colaboradores c SET resumo_whatsapp = $2 FROM cargos cg, perfis_acesso pa
+       WHERE c.id = $1 AND cg.id = c.cargo_id AND pa.id = COALESCE(c.perfil_acesso_id, cg.perfil_acesso_id) AND ${EH_GERENTE}`, [req.ator.id, receber])
+    if (!n) throw proibido('O resumo é do admin e do gerente.')
+  }
+  res.json({ ok: true, receber })
 })
 
 module.exports = r

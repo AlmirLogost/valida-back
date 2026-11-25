@@ -92,6 +92,14 @@ async function concluir(req, execId, b) {
   // só serve para marcar a diferença; nunca muda a hora da conclusão).
   let feitaReal = b.feita_em === undefined || b.feita_em === null ? agora : new Date(feitaEm.getTime() + (diferenca || 0) * 1000)
   if (feitaReal > agora) feitaReal = agora
+  // Conclusão sem internet (a hora veio do celular): até 12 h depois e com os
+  // relógios próximos vale normalmente. Fora disso entra como feita, marcada
+  // "conferir horário", e só conta no prazo se quem confere aprovar.
+  let horario = null
+  if (b.feita_em !== undefined && b.feita_em !== null) {
+    if (diferenca === null || Math.abs(diferenca) > config.relogioAlertaS) horario = 'relogio'
+    else if (agora - feitaReal > config.envioTardeH * 3600e3) horario = 'tarde'
+  }
 
   return db.tx(async (x) => {
     if (chave) {
@@ -137,22 +145,23 @@ async function concluir(req, execId, b) {
 
     await x.exec(
       `UPDATE execucoes SET estado = $2, feita_em = $3, recebida_em = now(), resposta_texto = $4, resposta_num = $5,
-         resposta_fora = $6, foto_id = $7, chave_envio = $8, diferenca_relogio_s = $9, conferencia = NULL,
+         resposta_fora = $6, foto_id = $7, chave_envio = $8, diferenca_relogio_s = $9, horario_conferir = $10, conferencia = NULL,
          conferencia_motivo = NULL, conferida_por = NULL, conferida_por_tipo = NULL, conferida_em = NULL
        WHERE id = $1`,
-      [e.id, resp.na ? 'na' : 'feita', feitaReal, resp.campos.resposta_texto, resp.campos.resposta_num, resp.fora, fotoId, chave, diferenca])
-    if (eraNaoFeita) {
+      [e.id, resp.na ? 'na' : 'feita', feitaReal, resp.campos.resposta_texto, resp.campos.resposta_num, resp.fora, fotoId, chave, diferenca, horario])
+    // Com o horário por conferir, a ação da não feita continua aberta até aprovarem.
+    if (eraNaoFeita && !horario) {
       await x.exec(
         `UPDATE acoes SET estado = 'resolvida', solucao = 'Concluída sem internet antes do prazo (envio atrasado).', resolvida_em = now()
          WHERE execucao_id = $1 AND tipo = 'nf' AND estado = 'aberta'`, [e.id])
     }
     let acao = null
     if (resp.fora) acao = await agenda.criarAcao(x, { unidade: u, exec: e, tarefa: t, tipo: 'fx', motivo: resp.motivo, agora })
-    await registrar(x, { empresaId: req.ator.empresaId, unidadeId: u.id, ator: req.ator, acao: 'execucao.concluida', entidade: 'execucao', entidadeId: e.id, detalhe: { tarefa: t.titulo, fora: resp.fora, offline: !!b.feita_em, diferenca_relogio_s: diferenca } })
+    await registrar(x, { empresaId: req.ator.empresaId, unidadeId: u.id, ator: req.ator, acao: 'execucao.concluida', entidade: 'execucao', entidadeId: e.id, detalhe: { tarefa: t.titulo, fora: resp.fora, offline: !!b.feita_em, diferenca_relogio_s: diferenca, horario_conferir: horario } })
     return {
       status: 200,
       corpo: {
-        ok: true, execucao_id: e.id, estado: resp.na ? 'na' : 'feita', fora: resp.fora, acao_id: acao ? acao.id : null,
+        ok: true, execucao_id: e.id, estado: resp.na ? 'na' : 'feita', fora: resp.fora, acao_id: acao ? acao.id : null, conferir_horario: !!horario,
         relogio_suspeito: diferenca !== null && Math.abs(diferenca) > config.relogioAlertaS,
         mensagem: resp.fora ? 'Registrado. O gerente foi avisado.' : 'Feito!'
       }
@@ -187,6 +196,12 @@ async function conferir(req, execId, b) {
     if (!['feita', 'na'].includes(e.estado)) throw conflito('Só dá para conferir tarefa feita.')
     let estado = e.estado
     if (decisao === 'reabrir') estado = await voltar(x, e, t, u, agora)
+    // Aprovar o horário: passa a contar no prazo e fecha a ação da não feita.
+    else if (e.horario_conferir) {
+      await x.exec(
+        `UPDATE acoes SET estado = 'resolvida', solucao = 'Horário conferido e aprovado: foi feita sem internet, antes do prazo.', resolvida_por = $2, resolvida_por_tipo = $3, resolvida_em = now()
+         WHERE execucao_id = $1 AND tipo = 'nf' AND estado = 'aberta'`, [e.id, req.ator.id, req.ator.tipo])
+    }
     await x.exec(
       `UPDATE execucoes SET conferencia = $2, conferencia_motivo = $3, conferida_por = $4, conferida_por_tipo = $5, conferida_em = now() WHERE id = $1`,
       [e.id, decisao === 'aprovar' ? 'aprovada' : 'reaberta', motivo, req.ator.id, req.ator.tipo])

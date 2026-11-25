@@ -11,6 +11,7 @@
 // não contam (conta a tarefa principal). Líquido nunca fica negativo.
 const tempo = require('../lib/tempo')
 
+const { PENDE_HORARIO } = require('../lib/horario')
 const r2 = (n) => Math.round(n * 100) / 100
 
 function regraNoDia(regras, data) {
@@ -23,11 +24,11 @@ async function calcular(dbx, colaboradorId, de, ate, agora = tempo.agora(), fuso
   const regras = await dbx.q('SELECT * FROM regras_bonus WHERE colaborador_id = $1 ORDER BY vigente_desde', [colaboradorId])
   const hoje = tempo.hoje(fuso, agora)
   const execs = await dbx.q(
-    `SELECT e.estado, e.data, t.valor_feita, t.valor_nao_feita FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id
+    `SELECT e.estado, e.data, t.valor_feita, t.valor_nao_feita, ${PENDE_HORARIO} AS pende_horario FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id
      WHERE e.colaborador_id = $1 AND e.data BETWEEN $2 AND $3 AND t.pai_id IS NULL AND e.estado IN ('feita', 'nao_feita', 'a_fazer')`,
     [colaboradorId, de, ate])
 
-  let bruto = 0, descontos = 0, atrasos = 0, ganhoHoje = 0, aReceber = 0, feitas = 0, naoFeitas = 0
+  let bruto = 0, descontos = 0, atrasos = 0, ganhoHoje = 0, aReceber = 0, aConferir = 0, feitas = 0, naoFeitas = 0
   for (const e of execs) {
     const r = regraNoDia(regras, e.data)
     if (!r || r.tipo === 'depois') continue
@@ -35,6 +36,8 @@ async function calcular(dbx, colaboradorId, de, ate, agora = tempo.agora(), fuso
     const vn = e.valor_nao_feita ?? r.valor_nao_feita ?? 0
     if (e.estado === 'feita') {
       feitas++
+      // Horário por conferir: não soma (nem desconta) até aprovarem.
+      if (e.pende_horario) { if (r.tipo === 'tarefa' || e.valor_feita !== null) aConferir += vf; continue }
       if (r.tipo === 'tarefa' || e.valor_feita !== null) { bruto += vf; if (e.data === hoje) ganhoHoje += vf }
     } else if (e.estado === 'nao_feita') {
       naoFeitas++
@@ -69,7 +72,7 @@ async function calcular(dbx, colaboradorId, de, ate, agora = tempo.agora(), fuso
   return {
     de, ate,
     bruto: r2(bruto), descontos: r2(descontos), atrasos: r2(atrasos), liquido,
-    hoje: r2(ganhoHoje), a_receber: r2(aReceber), feitas, nao_feitas: naoFeitas,
+    hoje: r2(ganhoHoje), a_receber: r2(aReceber), a_conferir: r2(aConferir), feitas, nao_feitas: naoFeitas,
     regra_atual: atual ? { tipo: atual.tipo, vigente_desde: atual.vigente_desde } : null
   }
 }

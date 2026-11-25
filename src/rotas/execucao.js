@@ -15,12 +15,13 @@ const { registrar } = require('../lib/registro')
 const { tem, exigir, conferirUnidade } = require('../auth/sessao')
 const { invalido, proibido, naoEncontrado, conflito } = require('../lib/erros')
 const pedidos = require('../pedidos/servico')
+const { PENDE_HORARIO } = require('../lib/horario')
 
 const r = express.Router()
 
 const CAMPOS = `e.id, e.tarefa_id, e.colaborador_id, e.unidade_id, e.data, e.hora_prevista, e.estado, e.motivo_dispensa,
   e.feita_em, e.recebida_em, e.resposta_texto, e.resposta_num, e.resposta_fora, e.foto_id, e.conferencia, e.conferencia_motivo,
-  e.conferida_por, e.conferida_por_tipo, e.conferida_em, e.desfeita_por, e.desfeita_por_tipo, e.desfeita_em, e.diferenca_relogio_s,
+  e.conferida_por, e.conferida_por_tipo, e.conferida_em, e.desfeita_por, e.desfeita_por_tipo, e.desfeita_em, e.diferenca_relogio_s, e.horario_conferir, ${PENDE_HORARIO} AS conferir_horario,
   t.titulo, t.porque, t.tipo_resposta, t.pede_foto, t.pai_id, t.nf_min, t.tolerancia_min, t.faixa_min, t.faixa_max, t.unidade_medida, t.opcoes,
   t.recorrencia, t.hora_fim, t.valor_feita, t.valor_nao_feita,
   c.nome AS colaborador_nome, u.fuso, (emp.config->>'tol_atraso_min')::int AS tol_empresa,
@@ -74,8 +75,8 @@ r.get('/meu-historico', async (req, res) => {
   if (ate < de) throw invalido('O fim precisa ser depois do início.')
   const lista = await db.q(
     `SELECT e.id, e.data, e.hora_prevista, e.estado, e.feita_em, e.foto_id, e.resposta_fora, t.titulo, t.pede_foto, t.valor_feita,
-            (e.estado = 'feita' AND e.hora_prevista IS NOT NULL AND e.feita_em >
-              ((e.data + e.hora_prevista) AT TIME ZONE u.fuso) + make_interval(mins => COALESCE(t.tolerancia_min, (emp.config->>'tol_atraso_min')::int, 10))) AS atrasada
+            (${PENDE_HORARIO} OR (e.estado = 'feita' AND e.hora_prevista IS NOT NULL AND e.feita_em >
+              ((e.data + e.hora_prevista) AT TIME ZONE u.fuso) + make_interval(mins => COALESCE(t.tolerancia_min, (emp.config->>'tol_atraso_min')::int, 10)))) AS atrasada
      FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id JOIN unidades u ON u.id = e.unidade_id JOIN empresas emp ON emp.id = e.empresa_id
      WHERE e.colaborador_id = $1 AND e.data BETWEEN $2 AND $3 AND t.pai_id IS NULL AND e.estado IN ('feita', 'nao_feita', 'na', 'a_fazer')
      ORDER BY e.data DESC, e.hora_prevista NULLS LAST, e.id`, [req.ator.id, de, ate])
@@ -127,6 +128,19 @@ r.get('/execucoes', async (req, res) => {
      ORDER BY e.data, e.hora_prevista NULLS LAST, e.id`,
     [req.ator.empresaId, unidadeId, de, ate, pessoa, soMinhas, req.ator.tipo === 'colaborador' ? req.ator.id : 0])
   res.json(enfeitar(lista))
+})
+
+// Horários para conferir (qualquer dia: o envio pode chegar no dia seguinte).
+r.get('/execucoes/horarios', exigir('conf'), async (req, res) => {
+  const unidadeId = v.inteiro(req.query.unidade_id, 'a unidade', { min: 1 })
+  if (unidadeId) conferirUnidade(req, unidadeId)
+  if (!req.acesso.admin && !tem(req, 'ver')) return res.json([])
+  res.json(await db.q(
+    `SELECT e.id, e.data, e.hora_prevista, e.feita_em, e.recebida_em, e.horario_conferir, e.diferenca_relogio_s, e.unidade_id, t.titulo, c.nome AS colaborador_nome
+     FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id JOIN colaboradores c ON c.id = e.colaborador_id
+     WHERE e.empresa_id = $1 AND e.unidade_id = ANY($2) AND ${PENDE_HORARIO} AND e.colaborador_id IS DISTINCT FROM $3
+     ORDER BY e.recebida_em DESC LIMIT 200`,
+    [req.ator.empresaId, unidadeId ? [unidadeId] : [...req.acesso.unidades], req.ator.tipo === 'colaborador' ? req.ator.id : null]))
 })
 
 r.post('/execucoes/:id/concluir', async (req, res) => {
@@ -295,8 +309,8 @@ r.get('/relatorios', exigir('rel'), async (req, res) => {
     const pessoa = v.inteiro(req.query.colaborador_id, 'a pessoa', { min: 1 })
     out.itens = await db.q(
       `SELECT e.id, e.data, e.hora_prevista, e.estado, t.titulo, e.colaborador_id, c.nome AS pessoa, cg.perfil, e.unidade_id,
-              (e.estado = 'feita' AND e.hora_prevista IS NOT NULL AND e.feita_em >
-                ((e.data + e.hora_prevista) AT TIME ZONE u.fuso) + make_interval(mins => COALESCE(t.tolerancia_min, (emp.config->>'tol_atraso_min')::int, 10))) AS atrasada
+              (${PENDE_HORARIO} OR (e.estado = 'feita' AND e.hora_prevista IS NOT NULL AND e.feita_em >
+                ((e.data + e.hora_prevista) AT TIME ZONE u.fuso) + make_interval(mins => COALESCE(t.tolerancia_min, (emp.config->>'tol_atraso_min')::int, 10)))) AS atrasada
        FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id JOIN colaboradores c ON c.id = e.colaborador_id JOIN cargos cg ON cg.id = c.cargo_id
        JOIN unidades u ON u.id = e.unidade_id JOIN empresas emp ON emp.id = e.empresa_id
        WHERE e.empresa_id = $1 AND e.unidade_id = ANY($2) AND e.data BETWEEN $3 AND $4 AND t.pai_id IS NULL
@@ -331,10 +345,10 @@ const CONTEUDOS = { execucoes: 'Tarefas', pessoas: 'Pessoas e cargos', tarefas: 
 async function linhasExport(req, conteudo, unidades, de, ate) {
   if (conteudo === 'execucoes') {
     return {
-      colunas: ['data', 'hora_prevista', 'unidade', 'pessoa', 'tarefa', 'estado', 'feita_em', 'resposta_texto', 'resposta_num', 'fora', 'conferencia'],
+      colunas: ['data', 'hora_prevista', 'unidade', 'pessoa', 'tarefa', 'estado', 'feita_em', 'resposta_texto', 'resposta_num', 'fora', 'conferencia', 'conferir_horario'],
       linhas: await db.q(
         `SELECT e.data, e.hora_prevista, u.nome AS unidade, c.nome AS pessoa, t.titulo AS tarefa, e.estado, e.feita_em, e.resposta_texto,
-                e.resposta_num, e.resposta_fora AS fora, e.conferencia
+                e.resposta_num, e.resposta_fora AS fora, e.conferencia, ${PENDE_HORARIO} AS conferir_horario
          FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id JOIN colaboradores c ON c.id = e.colaborador_id JOIN unidades u ON u.id = e.unidade_id
          WHERE e.empresa_id = $1 AND e.unidade_id = ANY($2) AND e.data BETWEEN $3 AND $4 ORDER BY e.data, e.hora_prevista`,
         [req.ator.empresaId, unidades, de, ate])

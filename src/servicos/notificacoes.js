@@ -4,7 +4,8 @@
 //   atraso   passou da tolerância (avisar_atraso) → gerente da unidade e admins
 //   acao     ação nova → responsável
 //   vencida  ação com prazo vencido → admins
-//   resumo   22 h, WhatsApp SIMULADO, só o que ficou pendente → admins
+//   resumo   22 h, WhatsApp SIMULADO, só o que ficou pendente → admins e gerentes,
+//            cada um só das suas unidades, com opção de desligar
 // "push" desligado na unidade = nenhum aviso por push dela. Cada aviso tem uma
 // chave única (notificacoes_enviadas): reservar a chave é o que autoriza enviar,
 // então nunca sai duas vezes, nem com dois servidores.
@@ -106,21 +107,40 @@ async function avisarUnidade(unidade, agora) {
 }
 
 // Resumo das 22 h no WhatsApp: SIMULADO (cai na caixa local de lib/envio.js).
-async function resumoUnidade(unidade, agora) {
-  const hora = tempo.minutos(tempo.horaAgora(unidade.fuso, agora))
-  if (hora < 22 * 60 || hora >= 22 * 60 + 30) return 0
-  const cfg = await db.um('SELECT resumo_whatsapp FROM config_notificacoes WHERE unidade_id = $1', [unidade.id])
-  if (!cfg || !cfg.resumo_whatsapp) return 0
-  const hoje = tempo.hoje(unidade.fuso, agora)
-  const pend = await db.q(
-    `SELECT t.titulo, c.nome FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id JOIN colaboradores c ON c.id = e.colaborador_id
-     WHERE e.unidade_id = $1 AND e.data = $2 AND e.estado IN ('a_fazer', 'nao_feita') AND t.pai_id IS NULL ORDER BY c.nome, e.hora_prevista`, [unidade.id, hoje])
-  if (!pend.length) return 0
+// Um por pessoa: admins (todas as unidades da empresa) e gerentes (só as deles),
+// das unidades com o resumo ligado e algo pendente. Cada um pode desligar o seu.
+async function resumos(agora, soEmpresa = null) {
+  const us = await db.q(
+    `SELECT u.* FROM unidades u JOIN empresas e ON e.id = u.empresa_id JOIN config_notificacoes cn ON cn.unidade_id = u.id
+     WHERE u.arquivado_em IS NULL AND e.situacao <> 'bloqueada' AND cn.resumo_whatsapp AND ($1::bigint IS NULL OR u.empresa_id = $1) ORDER BY u.nome, u.id`, [soEmpresa])
+  const porPessoa = new Map()
+  for (const u of us) {
+    const hora = tempo.minutos(tempo.horaAgora(u.fuso, agora))
+    if (hora < 22 * 60 || hora >= 22 * 60 + 30) continue
+    const hoje = tempo.hoje(u.fuso, agora)
+    const pend = await db.q(
+      `SELECT t.titulo, c.nome FROM execucoes e JOIN tarefas t ON t.id = e.tarefa_id JOIN colaboradores c ON c.id = e.colaborador_id
+       WHERE e.unidade_id = $1 AND e.data = $2 AND e.estado IN ('a_fazer', 'nao_feita') AND t.pai_id IS NULL ORDER BY c.nome, e.hora_prevista`, [u.id, hoje])
+    if (!pend.length) continue
+    const quem = [
+      ...(await db.q('SELECT id, celular FROM admins WHERE empresa_id = $1 AND resumo_whatsapp AND celular IS NOT NULL', [u.empresa_id])).map((x) => ({ ...x, tipo: 'admin' })),
+      ...(await db.q(
+        `SELECT c.id, c.celular FROM colaboradores c JOIN cargos cg ON cg.id = c.cargo_id JOIN perfis_acesso pa ON pa.id = COALESCE(c.perfil_acesso_id, cg.perfil_acesso_id)
+         WHERE c.empresa_id = $1 AND c.situacao = 'ativo' AND c.excluido_em IS NULL AND c.resumo_whatsapp AND c.celular IS NOT NULL AND ${agenda.EH_GERENTE}
+           AND EXISTS (SELECT 1 FROM colaborador_unidades cu WHERE cu.colaborador_id = c.id AND cu.unidade_id = $2)`, [u.empresa_id, u.id])).map((x) => ({ ...x, tipo: 'colaborador' }))
+    ]
+    for (const p of quem) {
+      const k = `resumo:${p.tipo}:${p.id}:${hoje}:${u.fuso}`
+      if (!porPessoa.has(k)) porPessoa.set(k, { ...p, u, n: 0, partes: [] })
+      const x = porPessoa.get(k)
+      x.n += pend.length
+      x.partes.push(`${u.nome}: ${pend.length} ${pend.length > 1 ? 'pendentes' : 'pendente'}\n` + pend.map((y) => `• ${y.titulo} (${primeiro(y.nome)})`).join('\n'))
+    }
+  }
   let n = 0
-  for (const a of await db.q('SELECT id, celular FROM admins WHERE empresa_id = $1 AND celular IS NOT NULL', [unidade.empresa_id])) {
-    const r = await reservar(unidade, { chave: `resumo:${unidade.id}:${hoje}:${a.id}`, tipo: 'resumo', dono: { tipo: 'admin', id: a.id } })
-    if (!r) continue
-    await enviar({ canal: 'whatsapp', destino: a.celular, assunto: `Resumo do dia (${pend.length} pendentes)`, texto: `${unidade.nome}: ficaram pendentes ${pend.length}.\n` + pend.map((p) => `• ${p.titulo} (${primeiro(p.nome)})`).join('\n') })
+  for (const [chave, x] of porPessoa) {
+    if (!await reservar(x.u, { chave, tipo: 'resumo', dono: { tipo: x.tipo, id: x.id } })) continue
+    await enviar({ canal: 'whatsapp', destino: x.celular, assunto: `Resumo do dia (${x.n} ${x.n > 1 ? 'pendentes' : 'pendente'})`, texto: x.partes.join('\n\n') })
     n++
   }
   return n
@@ -129,11 +149,13 @@ async function resumoUnidade(unidade, agora) {
 async function rodada(agora = tempo.agora()) {
   const us = await db.q(
     `SELECT u.* FROM unidades u JOIN empresas e ON e.id = u.empresa_id WHERE u.arquivado_em IS NULL AND e.situacao <> 'bloqueada' ORDER BY u.id`)
-  let avisos = 0, resumos = 0
+  let avisos = 0
   for (const u of us) {
-    try { avisos += await avisarUnidade(u, agora); resumos += await resumoUnidade(u, agora) } catch (e) { console.error(`[avisos] unidade ${u.id}: código ${e.code || '-'} ${String(e.message).split('\n')[0]}`) }
+    try { avisos += await avisarUnidade(u, agora) } catch (e) { console.error(`[avisos] unidade ${u.id}: código ${e.code || '-'} ${String(e.message).split('\n')[0]}`) }
   }
-  return { avisos, resumos }
+  let enviados = 0
+  try { enviados = await resumos(agora) } catch (e) { console.error(`[resumo] código ${e.code || '-'} ${String(e.message).split('\n')[0]}`) }
+  return { avisos, resumos: enviados }
 }
 
-module.exports = { candidatas, avisarUnidade, resumoUnidade, rodada }
+module.exports = { candidatas, avisarUnidade, resumos, rodada }

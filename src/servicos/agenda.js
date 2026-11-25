@@ -125,12 +125,14 @@ function prazoDaAcao(abertaEm, prazoMin, fuso) {
 
 // Responsável: o gerente da unidade (Coordenação com perfil de Gerente);
 // sem gerente, o admin. Nunca a própria pessoa da tarefa.
+// É gerente (perfil fixo Gerente, o antigo, ou cargo com esse nome). SQL: cg, pa.
+const EH_GERENTE = `(cg.perfil = 'coordenador' AND (pa.fixo_tipo = 'gerente' OR pa.legado_slug = 'gerente' OR lower(cg.nome) = 'gerente'))`
 async function responsavel(dbx, unidade, colaboradorId) {
   const g = await dbx.um(
     `SELECT c.id FROM colaboradores c JOIN cargos cg ON cg.id = c.cargo_id
      JOIN perfis_acesso pa ON pa.id = COALESCE(c.perfil_acesso_id, cg.perfil_acesso_id)
      WHERE c.unidade_principal_id = $1 AND c.situacao = 'ativo' AND c.excluido_em IS NULL AND c.id <> $2
-       AND cg.perfil = 'coordenador' AND (pa.fixo_tipo = 'gerente' OR pa.legado_slug = 'gerente' OR lower(cg.nome) = 'gerente')
+       AND ${EH_GERENTE}
      ORDER BY c.id LIMIT 1`, [unidade.id, colaboradorId])
   if (g) return { tipo: 'colaborador', id: g.id }
   const a = await dbx.um('SELECT id FROM admins WHERE empresa_id = $1 ORDER BY id LIMIT 1', [unidade.empresa_id])
@@ -231,4 +233,4 @@ async function rodada(agora = tempo.agora()) {
   }
 }
 
-module.exports = { tarefaValeNoDia, gerarDia, acertarEstados, vencer, avisarVencidas, processarUnidade, rodada, limiteDe, prazoDaAcao, responsavel, criarAcao, marcarNaoFeita, MOTIVOS_SISTEMA }
+module.exports = { tarefaValeNoDia, gerarDia, acertarEstados, vencer, avisarVencidas, processarUnidade, rodada, limiteDe, prazoDaAcao, responsavel, EH_GERENTE, criarAcao, marcarNaoFeita, MOTIVOS_SISTEMA }
