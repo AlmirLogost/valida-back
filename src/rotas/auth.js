@@ -67,6 +67,8 @@ const MOTIVOS = { cheguei_antes: 'cheguei antes', cobrir_outra_unidade: 'vou cob
 // 2) /cadastro: confere o código e cria empresa (trial de 30 dias, sem dados de
 //    pagamento), admin, primeira unidade, cargos e perfis; já devolve a sessão.
 const { randomInt } = require('crypto')
+// Público: o que a tela de login precisa saber antes de entrar.
+r.get('/config', (req, res) => res.set('Cache-Control', 'no-store').json({ piloto: config.piloto }))
 r.get('/planos', async (req, res) => {
   res.json(await db.q('SELECT slug, nome, preco_mensal, unidades_inclusas, max_unidades, max_colaboradores, preco_unidade_extra, meses_cobrados_no_anual FROM planos_catalogo WHERE ativo ORDER BY preco_mensal'))
 })

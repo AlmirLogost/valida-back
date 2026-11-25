@@ -39,6 +39,7 @@ const env = {
   ENVIO_SIMULADO_ARQUIVO: '',
   FRONTEND_URL: 'http://front.teste',
   WEBHOOK_ASAAS_ATIVO: 'false',
+  PILOTO: '',
   APP_BASE: process.env.APP_BASE || '/',   // rode também com APP_BASE=/valida/
   VAPID_PUBLIC_KEY: '', VAPID_PRIVATE_KEY: '',   // nos testes nada sai para o push real
   // Fotos dos testes numa pasta temporária (nunca em FOTOS-VALIDA/) e limite menor.

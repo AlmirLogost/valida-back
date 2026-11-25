@@ -9,7 +9,7 @@ const config = require('../src/config')
 const { criarApp } = require('../src/app')
 const { caixa } = require('../src/lib/envio')
 
-const original = { appBase: config.appBase, frontDist: config.frontDist, frontendUrl: config.frontendUrl }
+const original = { appBase: config.appBase, frontDist: config.frontDist, frontendUrl: config.frontendUrl, piloto: config.piloto }
 const abertos = []
 let dist
 async function subirEm(base) {
@@ -85,4 +85,19 @@ test('em /valida/: login e sessão funcionam, e o link de senha leva ao caminho 
     assert.equal((await json('/auth/admin/esqueci', { email: E.email })).status, 200)
     assert.ok(caixa[0].texto.includes(espera), base)
   }
+})
+
+test('PILOTO: /config é público e diz se o login esconde as opções', async () => {
+  const ler = async () => { const r = await h.chamar('GET', '/api/v2/config'); assert.equal(r.status, 200); assert.equal(r.headers.get('cache-control'), 'no-store'); return r.corpo }
+  config.appBase = original.appBase
+  config.piloto = false
+  assert.deepEqual(await ler(), { piloto: false }, 'sem a variável')
+  config.piloto = true
+  assert.deepEqual(await ler(), { piloto: true }, 'só isso, nada interno')
+})
+test('PILOTO: só "true" liga', () => {
+  const { execFileSync } = require('node:child_process')
+  const valor = (v) => execFileSync(process.execPath, ['-e', "console.log(require('./src/config').piloto)"], { cwd: path.join(__dirname, '..'), env: { ...process.env, PILOTO: v } }).toString().trim()
+  assert.equal(valor('true'), 'true')
+  for (const v of ['', 'false', '0', 'sim']) assert.equal(valor(v), 'false', v)
 })

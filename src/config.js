@@ -36,6 +36,9 @@ module.exports = {
   // D17: envio de e-mail/WhatsApp/SMS sempre simulado até o piloto.
   envioSimulado: process.env.ENVIO_SIMULADO !== 'false',
   envioSimuladoArquivo: process.env.ENVIO_SIMULADO_ARQUIVO || '',
+  // Piloto: o login esconde "Começar teste grátis" e "Esqueci minha senha"
+  // (dependem de envio real). O front pergunta em GET /config.
+  piloto: process.env.PILOTO === 'true',
   // D14: webhook da Asaas desligado (404).
   webhookAsaasAtivo: process.env.WEBHOOK_ASAAS_ATIVO === 'true',
   fusoPadrao: 'America/Sao_Paulo',
